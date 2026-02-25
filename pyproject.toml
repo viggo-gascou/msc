@@ -1,0 +1,127 @@
+[project]
+name = "msc"
+version = "0.1.0"
+description = "a project"
+readme = "README.md"
+authors = [
+    {name = "Viggo Gascou", email = "viga@itu.dk"},
+]
+
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "deepface>=0.0.98",
+    "loguru>=0.7.3",
+    "numpy>=2.4.2",
+    "omegaconf>=2.3.0",
+    "tf-keras>=2.20.1",
+    "torch>=2.10.0",
+    "tyro>=1.0.6",
+]
+
+[project.urls]
+Repository = "https://github.com/viggo-gascou/msc"
+Issues = "https://github.com/viggo-gascou/msc/issues"
+
+[project.license]
+file = "LICENSE"
+
+[dependency-groups]
+dev = [
+    "pre-commit>=4.3.0",
+    "click>=8.2.1",
+    "ruff>=0.15.1",
+    "pyrefly>=0.52.0",
+    "nbstripout>=0.9.0",
+    "pip>=25.3.0",
+    "ipykernel>=7.2.0",
+    "jupyter>=1.1.1",
+]
+
+[tool.uv.sources]
+torch = [
+  { index = "pytorch", marker = "sys_platform == 'linux' or sys_platform == 'win32'" },
+]
+torchvision = [
+  { index = "pytorch", marker = "sys_platform == 'linux' or sys_platform == 'win32'" },
+]
+py-feat = { git = "https://github.com/cosanlab/py-feat", rev = "c4f6364299ea2258ae1e73ed73c95750a18bff3e" }
+
+[[tool.uv.index]]
+name = "pytorch"
+url = "https://download.pytorch.org/whl/cu129"
+explicit = true
+
+
+[tool.ruff]
+target-version = "py312"
+line-length = 88
+exclude = [
+    ".git",
+    ".ruff_cache",
+    ".venv",
+]
+extend-include = [
+    "*.ipynb",
+]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+docstring-code-format = true
+skip-magic-trailing-comma = true
+
+[tool.ruff.lint]
+preview = true
+select = [
+    # isort (imports)
+    "I",
+    # Docstrings
+    "D",
+    "DOC",
+    # pycodestyle errors and warnings (PEP8)
+    "E",
+    "W",
+    # flake-annotations (type hints)
+    "ANN",
+    # Pyflakes
+    "F",
+]
+ignore = [
+    # Type annotations for "self" arguments
+    "ANN101",
+    # Type annotations for "cls" arguments
+    "ANN102",
+    # Type annotations for *args
+    "ANN002",
+    # Type annotations for **kwargs
+    "ANN003",
+]
+
+[tool.ruff.lint.extend-per-file-ignores]
+"__init__.py" = [
+    "F401",
+]
+"src/scripts/main.py" = [
+    "I",
+]
+
+[tool.ruff.lint.isort]
+split-on-trailing-comma = false
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.pyrefly.errors]
+missing-import = false
+missing-attribute = false
+not-iterable = false
+no-matching-overload = false
+
+[tool.pyrefly]
+site-package-path = [".venv/lib/python3.12/site-packages"]
+project-excludes = ["src/scripts"]
+
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
