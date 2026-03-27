@@ -1,6 +1,6 @@
 # This ensures that we can call `make <target>` even if `<target>` exists as a file or
 # directory.
-.PHONY: docs help
+.PHONY: docs help download-ffhq
 
 # Exports all variables defined in the makefile available to scripts
 .EXPORT_ALL_VARIABLES:
@@ -67,3 +67,6 @@ tree:  ## Print directory tree
 
 check:  ## Lint, format, and type-check the code
 	@uv run pre-commit run --all-files
+
+download-ffhq:  ## Download FFHQ dataset (set FORCE_REDOWNLOAD=1 to re-download)
+	@uv run --with gdown src/scripts/download_ffhq.py
