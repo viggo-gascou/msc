@@ -1,9 +1,3 @@
-# /// script
-# requires-python = ">=3.12"
-# dependencies = [
-#     "gdown>=5.2.1",
-# ]
-# ///
 """Simple FFHQ metadata and archive downloader using gdown.
 
 This script downloads:
@@ -22,9 +16,8 @@ from zipfile import ZipFile
 import gdown
 
 from msc.constants import DATA_DIR
-
-JSON_URL = "https://drive.google.com/file/d/16N0RV4fHI6joBuKbQAoG34V_cQk7vxSA"
-ZIP_FOLDER_URL = "https://drive.google.com/drive/folders/1WocxvZ4GEZ1DI8dOz30aSj2zT6pkATYS"
+JSON_URL = "16N0RV4fHI6joBuKbQAoG34V_cQk7vxSA"
+ZIP_FOLDER_URL = "1WvlAIvuochQn_L_f9p3OdFdTiSLlnnhv"
 
 
 def _ensure_dirs(root: Path) -> tuple[Path, Path]:
@@ -38,7 +31,10 @@ def _ensure_dirs(root: Path) -> tuple[Path, Path]:
 def download_json(metadata_dir: Path) -> Path:
     out_path = metadata_dir / "ffhq-dataset-v2.json"
     print(f"Downloading JSON to {out_path} ...")
-    result = gdown.download(url=JSON_URL, output=str(out_path), quiet=False, fuzzy=True)
+    if out_path.exists():
+        print(f"File {out_path} already exists, skipping download.")
+        return out_path
+    result = gdown.download(id=JSON_URL, output=str(out_path), quiet=False, fuzzy=False, format="json")
     if not result:
         raise RuntimeError("Failed to download JSON metadata file.")
     return Path(result)
@@ -46,8 +42,14 @@ def download_json(metadata_dir: Path) -> Path:
 
 def download_zip_from_folder(data_dir: Path) -> Path:
     print(f"Downloading files from folder link into {data_dir} ...")
-    downloaded = gdown.download_folder(
-        url=ZIP_FOLDER_URL,
+    if data_dir.exists() and any(data_dir.iterdir()):
+        print(f"Directory {data_dir} already contains files, skipping download.")
+        zip_files = list(data_dir.glob("*.zip"))
+        if not zip_files:
+            raise RuntimeError(f"No ZIP files found in {data_dir} after skipping download.")
+        return zip_files[0]
+    downloaded = gdown.download(
+        id=ZIP_FOLDER_URL,
         output=str(data_dir),
         quiet=False,
         use_cookies=False,
@@ -92,7 +94,7 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
-    root = args.output_dir.resolve()
+    root = args.output_dir  # Keep as relative Path for proper concatenation
     metadata_dir, data_dir = _ensure_dirs(root)
 
     json_path = download_json(metadata_dir)
