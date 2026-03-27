@@ -1,113 +1,106 @@
-"""Simple FFHQ metadata and archive downloader using gdown.
+"""Download FFHQ metadata and data files."""
 
-This script downloads:
-1) The FFHQ JSON metadata file into ./ffhq_data/metadata
-2) A ZIP archive from the provided Google Drive folder into ./ffhq_data/data
-
-It then extracts the ZIP archive into ./ffhq_data/data.
-"""
-
-from __future__ import annotations
-
-import argparse
+import os
+import sys
 from pathlib import Path
 from zipfile import ZipFile
 
 import gdown
+from loguru import logger
 
 from msc.constants import DATA_DIR
-JSON_URL = "16N0RV4fHI6joBuKbQAoG34V_cQk7vxSA"
-ZIP_FOLDER_URL = "1WvlAIvuochQn_L_f9p3OdFdTiSLlnnhv"
+from msc.log_utils import LOG_FORMAT
+
+logger.remove()
+logger.add(sys.stderr, format=LOG_FORMAT, colorize=True)
+
+JSON_METADATA_FILE_ID = "16N0RV4fHI6joBuKbQAoG34V_cQk7vxSA"
+ZIP_DATA_FILE_ID = "1WvlAIvuochQn_L_f9p3OdFdTiSLlnnhv"
+OUTPUT_DIR = Path("ffhq_data")
+FORCE_REDOWNLOAD = bool(os.getenv("FORCE_REDOWNLOAD"))
 
 
-def _ensure_dirs(root: Path) -> tuple[Path, Path]:
-    metadata_dir = DATA_DIR / root / "metadata"
-    data_dir = DATA_DIR / root / "data"
-    metadata_dir.mkdir(parents=True, exist_ok=True)
-    data_dir.mkdir(parents=True, exist_ok=True)
-    return metadata_dir, data_dir
+def main() -> None:
+    """Entry point: download and extract FFHQ data."""
+    metadata_dir = DATA_DIR / OUTPUT_DIR / "metadata"
+    data_dir = DATA_DIR / OUTPUT_DIR / "data"
+    for d in (metadata_dir, data_dir):
+        d.mkdir(parents=True, exist_ok=True)
+
+    json_path = download_json(metadata_dir=metadata_dir)
+    zip_path = download_zip(data_dir=data_dir)
+    extract_zip(zip_path=zip_path, data_dir=data_dir)
+
+    logger.info("Done.")
+    logger.info(f"JSON: {json_path}")
+    logger.info(f"Data directory: {data_dir}")
 
 
 def download_json(metadata_dir: Path) -> Path:
+    """Download the FFHQ dataset JSON metadata file.
+
+    Args:
+        metadata_dir:
+          Directory where the JSON file will be saved.
+
+    Returns:
+        Path to the downloaded JSON file.
+
+    Raises:
+        RuntimeError:
+          If the download fails.
+    """
     out_path = metadata_dir / "ffhq-dataset-v2.json"
-    print(f"Downloading JSON to {out_path} ...")
-    if out_path.exists():
-        print(f"File {out_path} already exists, skipping download.")
+    if out_path.exists() and not FORCE_REDOWNLOAD:
+        logger.info(f"{out_path} already exists, skipping.")
         return out_path
-    result = gdown.download(id=JSON_URL, output=str(out_path), quiet=False, fuzzy=False, format="json")
+    logger.info(f"Downloading JSON to {out_path} ...")
+    result = gdown.download(
+        id=JSON_METADATA_FILE_ID, output=str(out_path), quiet=False, format="json"
+    )
     if not result:
         raise RuntimeError("Failed to download JSON metadata file.")
     return Path(result)
 
 
-def download_zip_from_folder(data_dir: Path) -> Path:
-    print(f"Downloading files from folder link into {data_dir} ...")
-    if data_dir.exists() and any(data_dir.iterdir()):
-        print(f"Directory {data_dir} already contains files, skipping download.")
-        zip_files = list(data_dir.glob("*.zip"))
-        if not zip_files:
-            raise RuntimeError(f"No ZIP files found in {data_dir} after skipping download.")
-        return zip_files[0]
-    downloaded = gdown.download(
-        id=ZIP_FOLDER_URL,
-        output=str(data_dir),
-        quiet=False,
-        use_cookies=False,
-    )
+def download_zip(data_dir: Path) -> Path:
+    """Download the FFHQ ZIP archive.
+
+    Args:
+        data_dir:
+          Directory where the ZIP file will be downloaded.
+
+    Returns:
+        Path to the ZIP archive.
+
+    Raises:
+        RuntimeError:
+          If the download fails or the result is not a ZIP file.
+    """
+    out_path = data_dir / "ffhq.zip"
+    if out_path.exists() and not FORCE_REDOWNLOAD:
+        logger.info(f"{out_path} already exists, skipping.")
+        return out_path
+    logger.info(f"Downloading ZIP to {out_path} ...")
+    downloaded = gdown.download(id=ZIP_DATA_FILE_ID, output=str(out_path), quiet=False)
     if not downloaded:
-        raise RuntimeError("No files were downloaded from the folder link.")
-
-    zip_files = [Path(p) for p in downloaded if str(p).lower().endswith(".zip")]
-    if not zip_files:
-        raise RuntimeError("Folder download did not contain a .zip file.")
-    if len(zip_files) > 1:
-        # Pick the largest ZIP if there are multiple candidates.
-        zip_files.sort(key=lambda p: p.stat().st_size if p.exists() else -1, reverse=True)
-
-    zip_path = zip_files[0]
-    print(f"Selected ZIP archive: {zip_path}")
-    return zip_path
+        raise RuntimeError("ZIP download failed.")
+    return Path(downloaded)
 
 
 def extract_zip(zip_path: Path, data_dir: Path) -> None:
-    print(f"Extracting {zip_path} into {data_dir} ...")
-    with ZipFile(zip_path, "r") as zip_ref:
-        zip_ref.extractall(data_dir)
-    print("Extraction complete.")
+    """Extract a ZIP archive into the given directory.
 
-
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Download FFHQ JSON and ZIP with gdown")
-    parser.add_argument(
-        "--output-dir",
-        type=Path,
-        default=Path("ffhq_data"),
-        help="Root output directory where metadata/ and data/ will be created (default: ./ffhq_data)",
-    )
-    parser.add_argument(
-        "--remove-zip",
-        action="store_true",
-        help="Delete the downloaded ZIP file after successful extraction",
-    )
-    return parser.parse_args()
-
-
-def main() -> None:
-    args = parse_args()
-    root = args.output_dir  # Keep as relative Path for proper concatenation
-    metadata_dir, data_dir = _ensure_dirs(root)
-
-    json_path = download_json(metadata_dir)
-    zip_path = download_zip_from_folder(data_dir)
-    extract_zip(zip_path, data_dir)
-
-    if args.remove_zip:
-        print(f"Removing ZIP archive: {zip_path}")
-        zip_path.unlink(missing_ok=True)
-
-    print("Done.")
-    print(f"JSON: {json_path}")
-    print(f"Data directory: {data_dir}")
+    Args:
+        zip_path:
+          Path to the ZIP file to extract.
+        data_dir:
+          Destination directory for extracted contents.
+    """
+    logger.info(f"Extracting {zip_path} into {data_dir} ...")
+    with ZipFile(file=zip_path, mode="r") as zf:
+        zf.extractall(path=data_dir)
+    logger.info("Extraction complete.")
 
 
 if __name__ == "__main__":
