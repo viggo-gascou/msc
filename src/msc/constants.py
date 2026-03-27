@@ -8,3 +8,8 @@ DATA_DIR = PROJECT_ROOT / "data"
 CONFIG_DIR = PROJECT_ROOT / "config"
 LOG_DIR = PROJECT_ROOT / "logs"
 MODEL_DIR = PROJECT_ROOT / "models"
+
+CACHE_DIR.mkdir(exist_ok=True, parents=True)
+DATA_DIR.mkdir(exist_ok=True, parents=True)
+LOG_DIR.mkdir(exist_ok=True, parents=True)
+MODEL_DIR.mkdir(exist_ok=True, parents=True)
