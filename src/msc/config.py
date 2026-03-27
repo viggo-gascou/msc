@@ -1,8 +1,10 @@
 """Configuration for the project."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
-from .enums import IdentityBackend, IdentityModel, LogLevel
+from .enums import IdentityModel, LogLevel, ONNXProvider
+
+DEFAULT_ONNX_PROVIDERS = [ONNXProvider.CUDA, ONNXProvider.COREML, ONNXProvider.CPU]
 
 
 @dataclass
@@ -32,11 +34,19 @@ class IdentityLoss:
     weight: float = 1.0
     """Weight for identity loss."""
 
-    backend: IdentityBackend = IdentityBackend.OPENCV
-    """Backend for face detection."""
+    model: IdentityModel = IdentityModel.BUFFALO_L
+    """InsightFace model pack to use."""
 
-    model: IdentityModel = IdentityModel.VGG_FACE
-    """Model for face recognition."""
+    providers: list[ONNXProvider] = field(
+        default_factory=lambda: DEFAULT_ONNX_PROVIDERS
+    )
+    """ONNX Runtime execution providers, tried in order."""
+
+    ctx_id: int = -1
+    """GPU device index (-1 for CPU)."""
+
+    det_size: tuple[int, int] = (640, 640)
+    """Face detection input resolution."""
 
 
 @dataclass

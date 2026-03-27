@@ -1,102 +1,118 @@
-"""Identity Loss."""
+"""Identity Loss using face embeddings."""
 
-import collections.abc as c
 import typing as t
+from pathlib import Path
 
-from deepface import DeepFace
-from numpy.typing import NDArray
+import numpy as np
+import torch
+import torch.nn.functional as F
+from insightface.app import FaceAnalysis
 
-from ..enums import IdentityBackend, IdentityModel
+from ..config import DEFAULT_ONNX_PROVIDERS
+from ..constants import CACHE_DIR
+from ..enums import IdentityModel, ONNXProvider
+from ..torch_utils import tensor_to_bgr
+from .base import CustomLoss
 
-ImageType = str | NDArray[t.Any] | t.IO[bytes]
-BatchImageType = list[str] | list[NDArray[t.Any]] | list[t.IO[bytes]]
-EmbeddingType = c.Sequence[dict[str, t.Any]] | c.Sequence[list[dict[str, t.Any]]]
 
+class IdentityLoss(CustomLoss):
+    """Cosine identity loss based on frozen ArcFace face embeddings.
 
-class IdentityLoss:
-    """Identity loss."""
+    Compares the face identity of two batches of images by extracting
+    ArcFace embeddings via InsightFace and computing cosine distance.
+
+    Input tensors are expected to be float in [0, 1] or [-1, 1], shaped
+    (B, C, H, W) with RGB channel order.
+    """
 
     def __init__(
         self,
-        model_name: IdentityModel = IdentityModel.VGG_FACE,
-        detector_backend: IdentityBackend = IdentityBackend.OPENCV,
+        model_name: IdentityModel = IdentityModel.BUFFALO_L,
+        providers: list[ONNXProvider] | ONNXProvider = DEFAULT_ONNX_PROVIDERS,
+        ctx_id: int = -1,
+        det_size: tuple[int, int] = (640, 640),
+        weight: t.Optional[torch.Tensor] = None,
     ) -> None:
-        """Initialize the identity loss.
+        """Initialise the identity loss.
 
         Args:
-            model_name:
-                The name of the model to use.
-            detector_backend:
-                The backend to use for face detection.
+            model_name (optional):
+                InsightFace model to use. Defaults to `buffalo_l`.
+            providers (optional):
+                ONNX Runtime execution providers, tried in order.
+                Defaults to `[CUDA, CoreML, CPU]`.
+            ctx_id (optional):
+                GPU device index passed to `FaceAnalysis.prepare`.
+                Defaults to `-1` (CPU/MPS). Use `0` on a CUDA machine.
+            det_size (optional):
+                Detection input resolution. Defaults to `(640, 640)`.
+            weight (optional):
+                Scalar weight tensor passed to the base class, defaults to `None`.
         """
-        self.model_name: str = IdentityModel(model_name).value
-        self.detector_backend: str = IdentityBackend(detector_backend).value
+        super().__init__(weight=weight)
 
-    def verify(
-        self, first_image: ImageType, second_image: ImageType, **kwargs
-    ) -> dict[str, t.Any]:
-        """Verify that the two images are of the same person.
+        provider_strings = [
+            p.value if isinstance(p, ONNXProvider) else p for p in providers
+        ]
 
-        Args:
-            first_image:
-                The first image to compare.
-            second_image:
-                The second image to compare.
-            **kwargs:
-                Additional keyword arguments to pass to the verification model.
-
-        Returns:
-            A dictionary containing the verification result.
-        """
-        return DeepFace.verify(
-            img1_path=first_image,
-            img2_path=second_image,
-            model_name=self.model_name,
-            **kwargs,
+        self.app = FaceAnalysis(
+            name=model_name.value,
+            providers=provider_strings,
+            root=Path(CACHE_DIR, "insightface"),
         )
+        self.app.prepare(ctx_id=ctx_id, det_size=det_size)
 
-    def embedding(self, image: ImageType | BatchImageType, **kwargs) -> EmbeddingType:
-        """Get the embedding of the faces in the image.
+    def _get_embeddings(self, images: torch.Tensor) -> torch.Tensor:
+        """Extract normalised ArcFace embeddings for a batch of images.
 
         Args:
-            image:
-                The image or list of images to get the embedding(s) of.
-            **kwargs:
-                Additional keyword arguments to pass to the embedding model.
+            images:
+                Float tensor of shape ``(B, C, H, W)``.
 
         Returns:
-            The embedding of the faces in the image.
+            Float tensor of shape ``(B, 512)`` on the same device as
+            ``images``. Images where no face is detected get a zero
+            embedding vector.
         """
-        return DeepFace.represent(img_path=image, model_name=self.model_name, **kwargs)
+        device = images.device
+        batch_embeddings: list[np.ndarray] = []
 
-    def get_faces(self, image: ImageType | BatchImageType, **kwargs) -> EmbeddingType:
-        """Get the faces in the image.
+        for img_tensor in images:
+            bgr = tensor_to_bgr(img_tensor)
+            faces = self.app.get(bgr)
+
+            if faces:
+                face = max(
+                    faces,
+                    key=lambda f: (f.bbox[2] - f.bbox[0]) * (f.bbox[3] - f.bbox[1]),
+                )
+                batch_embeddings.append(face.normed_embedding)
+            else:
+                batch_embeddings.append(np.zeros(512, dtype=np.float32))
+
+        return torch.from_numpy(np.stack(batch_embeddings)).to(device)
+
+    def forward(self, input: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+        """Compute mean cosine identity loss over a batch.
 
         Args:
-            image:
-                The image or list of images to get the faces from.
-            **kwargs:
-                Additional keyword arguments to pass to the face detection model.
+            input:
+                Predicted images, shape ``(B, C, H, W)``.
+            target:
+                Ground-truth images, shape ``(B, C, H, W)``.
 
         Returns:
-            The faces in the image.
+            Scalar loss in ``[0, 1]``, where ``0`` means identical
+            identities and ``1`` means orthogonal embeddings.
         """
-        return DeepFace.extract_faces(
-            img_path=image, detector_backend=self.detector_backend, **kwargs
-        )
+        with torch.no_grad():
+            emb_input = self._get_embeddings(input)
+            emb_target = self._get_embeddings(target)
 
-    def loss(self, first_image: ImageType, second_image: ImageType, **kwargs) -> None:
-        """Get the loss between the two images.
+        similarity = F.cosine_similarity(emb_input, emb_target, dim=1)
+        loss = (1.0 - similarity) / 2.0
 
-        Args:
-            first_image:
-                The first image to compare.
-            second_image:
-                The second image to compare.
-            **kwargs:
-                Additional keyword arguments to pass to the verification model.
+        if self.weight is not None:
+            loss = loss * self.weight
 
-        Raises:
-            NotImplementedError: If the input images are not of the same size.
-        """
-        raise NotImplementedError("Implement this method")
+        return loss.mean()
