@@ -1,3 +1,9 @@
+# /// script
+# requires-python = ">=3.12"
+# dependencies = [
+#     "gdown>=5.2.1",
+# ]
+# ///
 """Simple FFHQ metadata and archive downloader using gdown.
 
 This script downloads:
