@@ -21,8 +21,10 @@ import pandas as pd
 from loguru import logger
 from tqdm import tqdm
 
+from msc.constants import DATA_DIR
+
 AU_CODING_DIR = Path.home() / "projects/semedit/data/BP4D/AUCoding"
-OUTPUT_PATH = Path.home() / "projects/semedit/data/BP4D/bp4d_index.parquet"
+OUTPUT_PATH = DATA_DIR / "BP4D/bp4d_index.parquet"
 
 INTENSITY_AUS = [6, 10, 12, 14, 17]
 

@@ -32,11 +32,12 @@ import pandas as pd
 from loguru import logger
 from tqdm import tqdm
 
+from msc.constants import DATA_DIR
 from msc.face_embeddings.preprocessor import FacePreprocessor
 
 INPUT_DIR = Path.home() / "projects/semedit/data/BP4D/Sequences"
-OUTPUT_DIR = Path.home() / "projects/semedit/data/BP4D/Preprocessed"
-INDEX_PATH = Path.home() / "projects/semedit/data/BP4D/bp4d_index.parquet"
+OUTPUT_DIR = DATA_DIR / "BP4D/Preprocessed"
+INDEX_PATH = DATA_DIR / "BP4D/bp4d_index.parquet"
 
 
 def parse_args() -> argparse.Namespace:
