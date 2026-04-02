@@ -67,6 +67,9 @@ def coded_frame_paths(
         for au_frame in group["frame"]:
             img_frame = int(au_frame) - 1  # AU 1-based → image 0-based
             img_path = root / subject / task / f"{img_frame:04d}.jpg"
+            # some have 3-digit frame numbers (e.g. 001.jpg instead of 0001.jpg) :(
+            if not img_path.exists():
+                img_path = root / subject / task / f"{img_frame:03d}.jpg"
             if img_path.exists():
                 paths.append(img_path)
         if paths:
@@ -117,9 +120,7 @@ def main() -> None:
             ):
                 faces: list[np.ndarray] = []
                 indices: list[int] = []
-                for img_path in tqdm(
-                    frames, desc=subject, unit="frame", leave=False
-                ):
+                for img_path in tqdm(frames, desc=subject, unit="frame", leave=False):
                     img = cv2.imread(str(img_path))
                     if img is None:
                         logger.warning(f"Could not read {img_path}")
