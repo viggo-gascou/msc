@@ -29,12 +29,16 @@ from .base import FaceEmbedding
 from .preprocessor import FacePreprocessor
 
 
-def load_adaface(device: str = "cuda") -> "AdaFaceEmbedding":
+def load_adaface(
+    device: str = "cuda", det_size: tuple[int, int] = (640, 640)
+) -> "AdaFaceEmbedding":
     """Download weights and return a ready-to-use AdaFaceEmbedding.
 
     Args:
         device:
           PyTorch device string to load the model onto.
+        det_size:
+          Detection resolution passed to FacePreprocessor.
 
     Returns:
       AdaFaceEmbedding with pretrained weights loaded and set to eval mode.
@@ -50,7 +54,7 @@ def load_adaface(device: str = "cuda") -> "AdaFaceEmbedding":
     backbone.load_state_dict(state_clean, strict=True)
     backbone.eval()
 
-    model = AdaFaceEmbedding(backbone=backbone).to(device=device)
+    model = AdaFaceEmbedding(backbone=backbone, det_size=det_size).to(device=device)
     model.eval()
     return model
 
@@ -64,15 +68,20 @@ class AdaFaceEmbedding(FaceEmbedding, nn.Module):
     raw images by detecting and aligning on the fly (no gradients).
     """
 
-    def __init__(self, backbone: "IR101") -> None:
+    def __init__(
+        self, backbone: "IR101", det_size: tuple[int, int] = (640, 640)
+    ) -> None:
         """Initialise AdaFaceEmbedding.
 
         Args:
             backbone:
               IR101 backbone to wrap.
+            det_size:
+              Detection resolution passed to FacePreprocessor on first embed call.
         """
         super().__init__()
         self.backbone = backbone
+        self._det_size = det_size
         self._preprocessor: FacePreprocessor | None = None
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -101,9 +110,12 @@ class AdaFaceEmbedding(FaceEmbedding, nn.Module):
           L2-normalised embedding of shape (512,).
         """
         if self._preprocessor is None:
-            self._preprocessor = FacePreprocessor()
+            self._preprocessor = FacePreprocessor(det_size=self._det_size)
         bgr = tensor_to_bgr(image=img) if isinstance(img, torch.Tensor) else img
-        crop = self._preprocessor.preprocess(img=bgr).unsqueeze(0)
+        try:
+            crop = self._preprocessor.preprocess(img=bgr).unsqueeze(0)
+        except ValueError:
+            return torch.zeros(512)
         with torch.no_grad():
             return self.forward(x=crop).squeeze(0)
 
