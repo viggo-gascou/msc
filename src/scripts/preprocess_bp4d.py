@@ -52,6 +52,9 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Re-process tasks that already have a saved .h5 file",
     )
+    p.add_argument(
+        "--task", type=str, default=None, help="Only process a single task (e.g. T1)"
+    )
     return p.parse_args()
 
 
@@ -68,9 +71,11 @@ def coded_frame_paths(
         for au_frame in group["frame"]:
             img_frame = int(au_frame) - 1  # AU 1-based → image 0-based
             img_path = root / subject / task / f"{img_frame:04d}.jpg"
-            # some have 3-digit frame numbers (e.g. 001.jpg instead of 0001.jpg) :(
+            # annoyingly some have 3-digit or 2-digit frame numbers instead of 4 :(
             if not img_path.exists():
                 img_path = root / subject / task / f"{img_frame:03d}.jpg"
+            if not img_path.exists():
+                img_path = root / subject / task / f"{img_frame:02d}.jpg"
             if img_path.exists():
                 paths.append(img_path)
         if paths:
@@ -95,6 +100,12 @@ def main() -> None:
     if not tasks:
         logger.error("No coded frames found")
         return
+
+    if args.task:
+        if args.task not in tasks:
+            logger.error(f"Task {args.task} not found in index")
+            return
+        tasks = {args.task: tasks[args.task]}
 
     total_frames = sum(
         len(frames) for subjects in tasks.values() for frames in subjects.values()
@@ -145,7 +156,7 @@ def main() -> None:
         tasks_processed += 1
 
     logger.info(
-        f"Done — tasks processed: {tasks_processed}  skipped (exists): {tasks_skipped}  "
+        f"Done — tasks processed: {tasks_processed}  skipped (exists): {tasks_skipped} "
         f"failed frames: {len(failed)}"
     )
 

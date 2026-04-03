@@ -2,6 +2,7 @@
 
 from pathlib import Path
 
+# Project root and data directories
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 CACHE_DIR = PROJECT_ROOT / ".cache"
 DATA_DIR = PROJECT_ROOT / "data"
@@ -13,3 +14,134 @@ CACHE_DIR.mkdir(exist_ok=True, parents=True)
 DATA_DIR.mkdir(exist_ok=True, parents=True)
 LOG_DIR.mkdir(exist_ok=True, parents=True)
 MODEL_DIR.mkdir(exist_ok=True, parents=True)
+
+# BP4D data constants
+BP4D_SEQUENCES_DIR = Path.home() / "projects/semedit/data/BP4D/Sequences"
+BP4D_CODING_DIR = Path.home() / "projects/semedit/data/BP4D/AUCoding"
+BP4D_DATA_DIR = DATA_DIR / "BP4D"
+BP4D_INDEX_PATH = BP4D_DATA_DIR / "bp4d_index.parquet"
+BP4D_PREPROCESSED_DIR = BP4D_DATA_DIR / "Preprocessed"
+BP4D_EMBEDDINGS_DIR = BP4D_DATA_DIR / "Embeddings"
+
+BP4D_DATA_DIR.mkdir(exist_ok=True, parents=True)
+BP4D_PREPROCESSED_DIR.mkdir(exist_ok=True, parents=True)
+BP4D_EMBEDDINGS_DIR.mkdir(exist_ok=True, parents=True)
+
+# AU columns coded in BP4D (occurrence), zero-padded to match FACS convention
+BP4D_AU_COLUMNS = [
+    "AU01",
+    "AU02",
+    "AU04",
+    "AU05",
+    "AU06",
+    "AU07",
+    "AU09",
+    "AU10",
+    "AU11",
+    "AU12",
+    "AU13",
+    "AU14",
+    "AU15",
+    "AU16",
+    "AU17",
+    "AU18",
+    "AU19",
+    "AU20",
+    "AU22",
+    "AU23",
+    "AU24",
+    "AU27",
+    "AU28",
+]
+
+# Subset of BP4D_AU_COLUMNS that also have intensity coding (0–5 scale)
+BP4D_AU_INTENSITY_COLUMNS = ["AU06", "AU10", "AU12", "AU14", "AU17"]
+
+# AUs with occurrence coding only (no intensity)
+BP4D_AU_OCCURRENCE_COLUMNS = [
+    au for au in BP4D_AU_COLUMNS if au not in BP4D_AU_INTENSITY_COLUMNS
+]
+
+# Action Unit constants
+AU_TO_FACS_MAP = {
+    "AU01": "Inner Brow Raiser",
+    "AU02": "Outer Brow Raiser",
+    "AU03": "Inner corner Brow Tightener",
+    "AU04": "Brow Lowerer",
+    "AU05": "Upper Lid Raiser",
+    "AU06": "Cheek Raiser",
+    "AU07": "Lid Tightener",
+    "AU08": "Lips Toward Each Other",
+    "AU09": "Nose Wrinkler",
+    "AU10": "Upper Lip Raiser",
+    "AU11": "Nasolabial Deepener",
+    "AU12": "Lip Corner Puller",
+    "AU13": "Sharp Lip Puller",
+    "AU14": "Dimpler",
+    "AU15": "Lip Corner Depressor",
+    "AU16": "Lower Lip Depressor",
+    "AU17": "Chin Raiser",
+    "AU18": "Lip Pucker",
+    "AU19": "Tongue Show",
+    "AU20": "Lip Stretcher",
+    "AU21": "Neck Tightener",
+    "AU22": "Lip Funneler",
+    "AU23": "Lip Tightener",
+    "AU24": "Lip Pressor",
+    "AU25": "Lip Part",
+    "AU26": "Jaw Drop",
+    "AU27": "Mouth Stretch",
+    "AU28": "Lip Suck",
+    "AU29": "Jaw Thrust",
+    "AU30": "Jaw Sideways",
+    "AU31": "Jaw Clencher",
+    "AU32": "Lip Bite",
+    "AU33": "Cheek Blow",
+    "AU34": "Cheek Puff",
+    "AU35": "Cheek Suck",
+    "AU37": "Lip Wipe",
+    "AU38": "Nostril Dilator",
+    "AU39": "Nostril Compressor",
+    "AU40": "Sniff",
+    "AU41": "Lid Drop",
+    "AU42": "Slit",
+    "AU43": "Eyes Closed",
+    "AU44": "Squint",
+    "AU45": "Blink",
+    "AU46": "Wink",
+    "AU51": "Head turn left",
+    "AU52": "Head turn right",
+    "AU53": "Head up",
+    "AU54": "Head down",
+    "AU55": "Head tilt left",
+    "AU56": "Head tilt right",
+    "AU57": "Head forward",
+    "AU58": "Head backward",
+    "AU61": "Eyes turn left",
+    "AU62": "Eyes turn right",
+    "AU63": "Eyes up",
+    "AU64": "Eyes down",
+    "AU65": "Strabismus",
+    "AU66": "Cross-eyed",
+}
+
+AU_TO_EMOTION_MAP = {
+    "AU1": ["sadness", "surprise", "fear"],
+    "AU2": ["surprise", "fear"],
+    "AU4": ["sadness", "fear", "anger"],
+    "AU5": ["surprise", "fear", "anger"],
+    "AU6": ["happiness", "disgust", "contempt"],
+    "AU7": ["fear", "anger"],
+    "AU8": ["none"],
+    "AU9": ["disgust"],
+    "AU11": ["disgust", "fear"],
+    "AU12": ["happiness", "contempt"],
+    "AU14": ["contempt"],
+    "AU15": ["sadness", "disgust"],
+    "AU17": ["disgust"],
+    "AU20": ["fear"],
+    "AU23": ["anger"],
+    "AU25": ["happiness", "surprise", "fear"],
+    "AU26": ["fear", "surprise"],
+    "AU38": ["anger"],
+}
