@@ -44,8 +44,7 @@ def load_adaface(
       AdaFaceEmbedding with pretrained weights loaded and set to eval mode.
     """
     filename = hf_hub_download(
-        repo_id="minchul/cvlface_adaface_ir101_webface12m",
-        filename="model.safetensors",
+        repo_id="minchul/cvlface_adaface_ir101_webface12m", filename="model.safetensors"
     )
     state = load_safetensors(filename=filename)
     state_clean = {k.removeprefix("model.net."): v for k, v in state.items()}

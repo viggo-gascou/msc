@@ -1,6 +1,7 @@
 """Logging utilities."""
 
 import logging
+import os
 import sys
 from datetime import datetime
 from logging import StreamHandler
@@ -13,6 +14,7 @@ from .config import Params
 
 # Centralized log format (plain text for files)
 LOG_FORMAT = "<cyan>[{time:YYYY-MM-DD HH:mm:ss}]</cyan><blue>[{name}]</blue>[<level>{level}</level>] {message}"  # noqa: E501
+LOG_FORMAT_FILE = "[{time:YYYY-MM-DD HH:mm:ss}][{name}][{level}] {message}"
 
 
 def setup_logging(
@@ -41,7 +43,11 @@ def setup_logging(
     now = datetime.now()
     date_dir = now.strftime("%Y-%m-%d")
     time_dir = now.strftime("%H-%M-%S")
-    run_dir = Path(output_dir, date_dir, time_dir)
+
+    # Optionally include SLURM job ID in run directory name, otherwise use "local"
+    job_id = os.environ.get("SLURM_JOB_ID", "local")
+
+    run_dir = Path(output_dir, date_dir, f"{time_dir}_{job_id}")
     run_dir.mkdir(parents=True, exist_ok=True)
 
     # Save config
@@ -50,7 +56,7 @@ def setup_logging(
 
     # Add file handler to loguru (plain text, no colors)
     log_file = run_dir / "main.log"
-    logger.add(log_file, format=LOG_FORMAT, level="DEBUG", colorize=False)
+    logger.add(log_file, format=LOG_FORMAT_FILE, level="DEBUG", colorize=False)
 
     # Log initial info
     logger.info(f"Logging to: {log_file.absolute()}")
