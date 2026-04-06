@@ -20,9 +20,7 @@ class IdentityLoss(CustomLoss):
     """
 
     def __init__(
-        self,
-        embedder: AdaFaceEmbedding,
-        weight: t.Optional[torch.Tensor] = None,
+        self, embedder: AdaFaceEmbedding, weight: t.Optional[torch.Tensor] = None
     ) -> None:
         """Initialise IdentityLoss.
 
