@@ -24,10 +24,6 @@ export OMP_NUM_THREADS=4
 # Disable albumentations to check for updates
 export NO_ALBUMENTATIONS_UPDATE=1
 
-# Go to the repo root
-# realpath resolves BASH_SOURCE[0] to an absolute path (the script), dirname strips the last element in the path
-cd "$(dirname "$(dirname "$(realpath "${BASH_SOURCE[0]}")")")"
-
 ## RUN
 
 echo "Running on $(hostname):"
