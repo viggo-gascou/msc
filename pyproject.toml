@@ -5,6 +5,7 @@ description = "a project"
 readme = "README.md"
 authors = [
     {name = "Viggo Gascou", email = "viga@itu.dk"},
+    {name = "Erling Amundsen", email = "erla@itu.dk"},
 ]
 
 requires-python = ">=3.12,<3.13"
