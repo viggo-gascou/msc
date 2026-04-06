@@ -7,8 +7,19 @@
 #SBATCH --time=5:30:00
 #SBATCH --partition=cores
 
+## SETUP
+
+# load uv
+module load uv/0.7.13-GCCcore-14.2.0
+
 export UV_FROZEN=1          # never update lockfile
 export UV_NO_DEV=1          # skip dev dependencies
+
+# Go to the repo root
+# realpath resolves BASH_SOURCE[0] to an absolute path (the script), dirname strips the last element in the path
+cd "$(dirname "$(dirname "$(realpath "${BASH_SOURCE[0]}")")")"
+
+## RUN
 
 git pull
 

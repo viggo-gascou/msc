@@ -10,25 +10,31 @@
 #SBATCH --mail-type=BEGIN,END
 #SBATCH --nodelist=cn13
 
+## SETUP
+
+# load uv
+module load uv/0.7.13-GCCcore-14.2.0
+
+# Never sync venv
+export UV_NO_SYNC=1
 
 # Set this to match "cpus-per-task", supresses ONNX warning on cpu affinity
 export OMP_NUM_THREADS=4
 
-# Disable albumentations to check for updates 
+# Disable albumentations to check for updates
 export NO_ALBUMENTATIONS_UPDATE=1
 
-# Nevers sync venv
-export UV_NO_SYNC=1
+# Go to the repo root
+# realpath resolves BASH_SOURCE[0] to an absolute path (the script), dirname strips the last element in the path
+cd "$(dirname "$(dirname "$(realpath "${BASH_SOURCE[0]}")")")"
 
+## RUN
 
 echo "Running on $(hostname):"
 echo "Using GPU $(nvidia-smi --query-gpu=gpu_name --format=csv,noheader)"
 
 VRAM_TOTAL=$(nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits | tr -d ' ')
 echo "Total GPU RAM: ${VRAM_TOTAL} MiB"
-
-# load uv
-module load uv/0.7.13-GCCcore-14.2.0
 
 # run the script
 uv run src/scripts/train.py
