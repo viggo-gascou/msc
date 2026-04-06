@@ -1,0 +1,15 @@
+#!/bin/bash
+
+#SBATCH --job-name=uv-sync
+#SBATCH --output=logs/SLURM/sync.%j.out
+#SBATCH --cpus-per-task=8
+#SBATCH --mem-per-cpu=2G
+#SBATCH --time=5:30:00
+#SBATCH --partition=cores
+
+export UV_FROZEN=1          # never update lockfile
+export UV_NO_DEV=1          # skip dev dependencies
+
+git pull
+
+uv sync
