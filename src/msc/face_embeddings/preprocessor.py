@@ -1,14 +1,11 @@
 """Face detection and alignment to the ArcFace canonical template."""
 
-from pathlib import Path
-
 import cv2
 import numpy as np
 import torch
-from insightface.app import FaceAnalysis
 from insightface.utils import face_align
 
-from ..constants import CACHE_DIR
+from .base import load_insightface
 
 
 class FacePreprocessor:
@@ -29,11 +26,7 @@ class FacePreprocessor:
               Detection input resolution. Should match input image size for
               best detection results.
         """
-        self.app = FaceAnalysis(
-            providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
-            root=Path(CACHE_DIR, "insightface"),
-        )
-        self.app.prepare(ctx_id=ctx_id, det_size=det_size)
+        self.app = load_insightface(ctx_id=ctx_id, det_size=det_size)
 
     def preprocess(self, img: np.ndarray) -> torch.Tensor:
         """Detect, align, and normalise a single BGR image.

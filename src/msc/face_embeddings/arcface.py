@@ -1,14 +1,11 @@
 """ArcFace embedding extractor using InsightFace buffalo_l."""
 
-from pathlib import Path
-
 import numpy as np
 import torch
 
-from ..constants import CACHE_DIR
 from ..enums import IdentityModel, ONNXProvider
 from ..torch_utils import tensor_to_bgr
-from .base import FaceEmbedding
+from .base import FaceEmbedding, load_insightface
 
 
 class ArcFaceEmbedding(FaceEmbedding):
@@ -23,8 +20,11 @@ class ArcFaceEmbedding(FaceEmbedding):
     def __init__(
         self,
         model_name: IdentityModel = IdentityModel.BUFFALO_L,
-        providers: list[ONNXProvider] | ONNXProvider = ONNXProvider.CPU,
-        ctx_id: int = -1,
+        providers: list[ONNXProvider] | ONNXProvider = [
+            ONNXProvider.CUDA,
+            ONNXProvider.CPU,
+        ],
+        ctx_id: int = 0,
         det_size: tuple[int, int] = (640, 640),
     ) -> None:
         """Initialise ArcFaceEmbedding.
@@ -39,18 +39,12 @@ class ArcFaceEmbedding(FaceEmbedding):
             det_size:
               Detection input resolution.
         """
-        from insightface.app import FaceAnalysis
-
-        provider_strings = [
-            p.value if isinstance(p, ONNXProvider) else p
-            for p in (providers if isinstance(providers, list) else [providers])
-        ]
-        self.app = FaceAnalysis(
-            name=model_name.value,
-            providers=provider_strings,
-            root=Path(CACHE_DIR, "insightface"),
+        self.app = load_insightface(
+            model_name=model_name,
+            providers=providers if isinstance(providers, list) else [providers],
+            ctx_id=ctx_id,
+            det_size=det_size,
         )
-        self.app.prepare(ctx_id=ctx_id, det_size=det_size)
 
     def embed(self, img: np.ndarray | torch.Tensor) -> torch.Tensor:
         """Extract a normalised ArcFace embedding from a single image.
