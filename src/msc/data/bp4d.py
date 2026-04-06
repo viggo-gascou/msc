@@ -8,8 +8,11 @@ import pandas as pd
 from ..constants import BP4D_INDEX_PATH
 
 
-def load_index() -> pd.DataFrame:
+def load_index(path: Path | None = None) -> pd.DataFrame:
     """Load the BP4D coded-frame index.
+
+    Args:
+        path: Path to the index parquet. Defaults to BP4D_INDEX_PATH.
 
     Returns:
         DataFrame with columns: subject, task, frame, AU*, AU*_int.
@@ -17,11 +20,10 @@ def load_index() -> pd.DataFrame:
     Raises:
         FileNotFoundError: If the index parquet has not been built yet.
     """
-    if not BP4D_INDEX_PATH.exists():
-        raise FileNotFoundError(
-            f"Index not found: {BP4D_INDEX_PATH} — run build_bp4d_index.py first"
-        )
-    return pd.read_parquet(BP4D_INDEX_PATH)
+    p = path or BP4D_INDEX_PATH
+    if not p.exists():
+        raise FileNotFoundError(f"Index not found: {p} — run build_bp4d_index.py first")
+    return pd.read_parquet(p)
 
 
 def resolve_frame_path(
