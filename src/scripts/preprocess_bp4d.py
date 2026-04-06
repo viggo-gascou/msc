@@ -15,29 +15,19 @@ grouped inside:
 
 indices are 0-based image frame numbers (AU frame number - 1).
 Frames where no face is detected are skipped and logged to <output_dir>/failed.txt.
-
-Usage:
-    uv run python src/scripts/preprocess_bp4d.py
-    uv run python src/scripts/preprocess_bp4d.py --force
 """
 
 import argparse
-from collections import defaultdict
-from pathlib import Path
 
 import cv2
 import h5py
 import numpy as np
-import pandas as pd
 from loguru import logger
 from tqdm import tqdm
 
-from msc.constants import DATA_DIR
+from msc.constants import BP4D_PREPROCESSED_DIR, BP4D_SEQUENCES_DIR
+from msc.data.bp4d import coded_frame_paths, load_index
 from msc.face_embeddings.preprocessor import FacePreprocessor
-
-INPUT_DIR = Path.home() / "projects/semedit/data/BP4D/Sequences"
-OUTPUT_DIR = DATA_DIR / "BP4D/Preprocessed"
-INDEX_PATH = DATA_DIR / "BP4D/bp4d_index.parquet"
 
 
 def parse_args() -> argparse.Namespace:
@@ -58,45 +48,21 @@ def parse_args() -> argparse.Namespace:
     return p.parse_args()
 
 
-def coded_frame_paths(
-    index: pd.DataFrame, root: Path
-) -> dict[str, dict[str, list[Path]]]:
-    """Return {task: {subject: [img_path, ...]}} for all coded frames in the index.
-
-    AU coding uses 1-based frame numbers; image filenames are 0-based (frame N-1).
-    """
-    tasks: dict[str, dict[str, list[Path]]] = defaultdict(dict)
-    for (subject, task), group in index.groupby(["subject", "task"]):
-        paths = []
-        for au_frame in group["frame"]:
-            img_frame = int(au_frame) - 1  # AU 1-based → image 0-based
-            img_path = root / subject / task / f"{img_frame:04d}.jpg"
-            # annoyingly some have 3-digit or 2-digit frame numbers instead of 4 :(
-            if not img_path.exists():
-                img_path = root / subject / task / f"{img_frame:03d}.jpg"
-            if not img_path.exists():
-                img_path = root / subject / task / f"{img_frame:02d}.jpg"
-            if img_path.exists():
-                paths.append(img_path)
-        if paths:
-            tasks[task][subject] = sorted(paths)
-    return dict(tasks)
-
-
 def main() -> None:
     """Main entry point."""
     args = parse_args()
 
-    if not INPUT_DIR.exists():
-        logger.error(f"Input directory not found: {INPUT_DIR}")
+    if not BP4D_SEQUENCES_DIR.exists():
+        logger.error(f"Input directory not found: {BP4D_SEQUENCES_DIR}")
         return
 
-    if not INDEX_PATH.exists():
-        logger.error(f"Index not found: {INDEX_PATH} — run build_bp4d_index.py first")
+    try:
+        index = load_index()
+    except FileNotFoundError as e:
+        logger.error(str(e))
         return
 
-    index = pd.read_parquet(INDEX_PATH)
-    tasks = coded_frame_paths(index, INPUT_DIR)
+    tasks = coded_frame_paths(index, BP4D_SEQUENCES_DIR)
     if not tasks:
         logger.error("No coded frames found")
         return
@@ -111,16 +77,15 @@ def main() -> None:
         len(frames) for subjects in tasks.values() for frames in subjects.values()
     )
     logger.info(f"Found {len(tasks)} tasks, {total_frames} coded frames total")
-    logger.info(f"Output directory: {OUTPUT_DIR}")
+    logger.info(f"Output directory: {BP4D_PREPROCESSED_DIR}")
 
     preprocessor = FacePreprocessor()
-    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
     failed: list[str] = []
     tasks_processed = tasks_skipped = 0
 
     for task, subjects in tqdm(tasks.items(), desc="Tasks", unit="task"):
-        out_path = OUTPUT_DIR / f"{task}.h5"
+        out_path = BP4D_PREPROCESSED_DIR / f"{task}.h5"
 
         if not args.force and out_path.exists():
             tasks_skipped += 1
@@ -161,7 +126,7 @@ def main() -> None:
     )
 
     if failed:
-        fail_log = OUTPUT_DIR / "failed.txt"
+        fail_log = BP4D_PREPROCESSED_DIR / "failed.txt"
         fail_log.write_text("\n".join(failed) + "\n")
         logger.info(f"Failed frames written to {fail_log}")
 
