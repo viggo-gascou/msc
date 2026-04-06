@@ -21,6 +21,4 @@ cd "$(dirname "$(dirname "$(realpath "${BASH_SOURCE[0]}")")")"
 
 ## RUN
 
-git pull
-
 uv sync
