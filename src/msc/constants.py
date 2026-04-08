@@ -54,7 +54,7 @@ BP4D_AU_COLUMNS = [
     "AU28",
 ]
 
-# Subset of BP4D_AU_COLUMNS that also have intensity coding (0–5 scale)
+# Subset of BP4D_AU_COLUMNS that also have intensity coding (0-5 scale)
 BP4D_AU_INTENSITY_COLUMNS = ["AU06", "AU10", "AU12", "AU14", "AU17"]
 
 # AUs with occurrence coding only (no intensity)

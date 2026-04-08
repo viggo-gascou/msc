@@ -8,7 +8,6 @@
 #SBATCH --time=8:00:00
 #SBATCH --partition=scavenge
 #SBATCH --mail-type=BEGIN,END
-#SBATCH --nodelist=cn13
 
 ## SETUP
 
