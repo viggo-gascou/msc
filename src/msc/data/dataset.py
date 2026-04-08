@@ -8,6 +8,7 @@ import numpy as np
 import torch
 from torchvision.datasets import VisionDataset
 from torchvision.io import ImageReadMode, decode_image
+from torchvision.transforms import v2
 from torchvision.tv_tensors import Image as TVImage
 
 from ..constants import (
@@ -17,6 +18,38 @@ from ..constants import (
     BP4D_SEQUENCES_DIR,
 )
 from .bp4d import load_index, resolve_frame_path
+
+
+def get_transforms(resolution: int = 512) -> tuple[v2.Compose, v2.Compose]:
+    """Return train and val/test transforms for BP4D images.
+
+    Both resize and center-crop to the target resolution, convert to float
+    [0, 1], and normalise to [-1, 1].  Train adds a random horizontal flip.
+
+    Args:
+        resolution: Target image resolution (width and height)
+
+    Returns:
+        (train_transforms, val_transforms)
+    """
+    train_transforms = v2.Compose(
+        [
+            v2.Resize(resolution),
+            v2.CenterCrop(resolution),
+            v2.RandomHorizontalFlip(),
+            v2.ToDtype(torch.float32, scale=True),
+            v2.Normalize([0.5, 0.5, 0.5], [0.5, 0.5, 0.5]),
+        ]
+    )
+    val_transforms = v2.Compose(
+        [
+            v2.Resize(resolution),
+            v2.CenterCrop(resolution),
+            v2.ToDtype(torch.float32, scale=True),
+            v2.Normalize([0.5, 0.5, 0.5], [0.5, 0.5, 0.5]),
+        ]
+    )
+    return train_transforms, val_transforms
 
 
 class BP4DSample(TypedDict):
