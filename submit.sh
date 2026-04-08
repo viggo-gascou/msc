@@ -14,9 +14,8 @@ mkdir -p logs/SLURM
 REPO_ROOT="$(dirname "$(realpath "${BASH_SOURCE[0]}")")"
 
 submit_job() {
-    local JOB_ID=$(sbatch --parsable --chdir="$REPO_ROOT" "$@")
-    echo "Submitted job: $JOB_ID" >&2
-    echo "$JOB_ID"
+    LAST_JOB_ID=$(sbatch --parsable --chdir="$REPO_ROOT" "$@")
+    echo "Submitted $MODE job: $LAST_JOB_ID" >&2
 }
 
 case "$MODE" in
@@ -27,9 +26,9 @@ case "$MODE" in
         submit_job "$@" jobs/train.job
         ;;
     sync-train)
-        SYNC_ID=$(submit_job jobs/sync.job)
-        TRAIN_ID=$(submit_job --dependency=afterok:$SYNC_ID "$@" jobs/train.job)
-        echo "Submitted train job, to start after sync job: $TRAIN_ID"
+        submit_job jobs/sync.job
+        SYNC_ID=$LAST_JOB_ID
+        submit_job --dependency=afterok:$SYNC_ID "$@" jobs/train.job
         ;;
     *)
         echo "Usage: $0 [sync|train|sync-train] [extra sbatch args for train]"
