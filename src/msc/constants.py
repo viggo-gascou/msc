@@ -20,6 +20,10 @@ BP4D_SEQUENCES_DIR = Path.home() / "projects/semedit/data/BP4D/Sequences"
 BP4D_CODING_DIR = Path.home() / "projects/semedit/data/BP4D/AUCoding"
 BP4D_DATA_DIR = DATA_DIR / "BP4D"
 BP4D_INDEX_PATH = BP4D_DATA_DIR / "bp4d_index.parquet"
+BP4D_TRAIN_INDEX_PATH = BP4D_DATA_DIR / "bp4d_train_index.parquet"
+BP4D_TEST_INDEX_PATH = BP4D_DATA_DIR / "bp4d_test_index.parquet"
+BP4D_VAL_INDEX_PATH = BP4D_DATA_DIR / "bp4d_val_index.parquet"
+
 BP4D_PREPROCESSED_DIR = BP4D_DATA_DIR / "Preprocessed"
 BP4D_EMBEDDINGS_DIR = BP4D_DATA_DIR / "Embeddings"
 
