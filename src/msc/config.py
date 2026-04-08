@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass, field
 
-from .enums import IdentityModel, LogLevel, ONNXProvider
+from .enums import LogLevel, ONNXProvider
 
 DEFAULT_ONNX_PROVIDERS = [ONNXProvider.CUDA, ONNXProvider.COREML, ONNXProvider.CPU]
 
@@ -10,6 +10,9 @@ DEFAULT_ONNX_PROVIDERS = [ONNXProvider.CUDA, ONNXProvider.COREML, ONNXProvider.C
 @dataclass
 class Params:
     """Configuration for the project."""
+
+    unet_model: str = "stable-diffusion-v1-5/stable-diffusion-v1-5"
+    """The UNet model id to use"""
 
     learning_rate: float = 0.001
     """Learning rate for optimizer"""
@@ -28,19 +31,22 @@ class Params:
 
 
 @dataclass
+class IPAdapter:
+    """Configuration for the IP adapter."""
+
+    repo: str = "h94/IP-Adapter-FaceID"
+    """The IP adapter repo to use"""
+
+    weight_id: str = "ip-adapter-faceid_sd15.bin"
+    """The IP adapter weight id to use"""
+
+
+@dataclass
 class IdentityLoss:
     """Configuration for the identity loss."""
 
     weight: float = 1.0
     """Weight for identity loss."""
-
-    model: IdentityModel = IdentityModel.BUFFALO_L
-    """InsightFace model pack to use."""
-
-    providers: list[ONNXProvider] = field(
-        default_factory=lambda: DEFAULT_ONNX_PROVIDERS
-    )
-    """ONNX Runtime execution providers, tried in order."""
 
     ctx_id: int = -1
     """GPU device index (-1 for CPU)."""
@@ -58,6 +64,9 @@ class Args:
 
     parameters: Params
     """Project parameters"""
+
+    ip_adapter: IPAdapter = field(default_factory=IPAdapter)
+    """IP-Adapter configuration"""
 
     log_level: LogLevel = LogLevel.INFO
     """Logging level"""
