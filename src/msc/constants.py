@@ -62,6 +62,14 @@ BP4D_AU_OCCURRENCE_COLUMNS = [
     au for au in BP4D_AU_COLUMNS if au not in BP4D_AU_INTENSITY_COLUMNS
 ]
 
+# 001 up to 023
+BP4D_FEMALE_SUBJECTS = list(f"F{str(i).zfill(3)}" for i in range(1, 24))
+
+# 001 up to 018
+BP4D_MALE_SUBJECTS = list(f"M{str(i).zfill(3)}" for i in range(1, 19))
+
+BP4D_SUBJECTS = BP4D_FEMALE_SUBJECTS + BP4D_MALE_SUBJECTS
+
 # Action Unit constants
 AU_TO_FACS_MAP = {
     "AU01": "Inner Brow Raiser",
@@ -145,3 +153,6 @@ AU_TO_EMOTION_MAP = {
     "AU26": ["fear", "surprise"],
     "AU38": ["anger"],
 }
+
+
+RANDOM_SEED = 4040
