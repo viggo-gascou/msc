@@ -6,6 +6,7 @@ from accelerate import Accelerator
 from diffusers import StableDiffusionPipeline
 from omegaconf import DictConfig
 from torch.utils.data import DataLoader
+from tqdm import tqdm
 from transformers import CLIPTokenizer
 
 from msc.cli import cli
@@ -54,9 +55,9 @@ def train(cfg: DictConfig) -> None:
     for model in [vae, text_encoder]:
         model.to(device)
 
-    for epoch in range(params.epochs):
+    for epoch in tqdm(range(params.epochs), desc="Epochs", unit="epoch"):
         epoch_loss = 0.0
-        for batch in loader:
+        for batch in tqdm(loader, desc="Training", unit="batch", leave=False):
             pixel_values = batch["image"].to(device)
             faceid_embeds = batch["arcface"].to(device)
 
@@ -92,7 +93,8 @@ def train(cfg: DictConfig) -> None:
             loss = F.mse_loss(input=pred, target=noise)
             epoch_loss += loss.item()
 
-            accelerator.backward(loss)
+            # TODO: enable backward pass once trainable params are added
+            # accelerator.backward(loss)
 
         print(f"epoch {epoch + 1} | loss {epoch_loss / len(loader):.4f}")
 
