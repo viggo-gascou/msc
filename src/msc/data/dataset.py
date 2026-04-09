@@ -6,28 +6,36 @@ from typing import Callable, NotRequired, TypedDict
 import h5py
 import numpy as np
 import torch
+from torch.utils.data import DataLoader
 from torchvision.datasets import VisionDataset
 from torchvision.io import ImageReadMode, decode_image
 from torchvision.transforms import v2
 from torchvision.tv_tensors import Image as TVImage
 
+from ..config import Params
 from ..constants import (
     BP4D_AU_COLUMNS,
     BP4D_EMBEDDINGS_DIR,
     BP4D_PREPROCESSED_DIR,
     BP4D_SEQUENCES_DIR,
+    BP4D_TEST_INDEX_PATH,
+    BP4D_TRAIN_INDEX_PATH,
+    BP4D_VAL_INDEX_PATH,
 )
 from .bp4d import load_index, resolve_frame_path
 
 
-def get_transforms(resolution: int = 512) -> tuple[v2.Compose, v2.Compose]:
+def get_transforms(
+    resolution: int = 512, augmentation_proba: float
+) -> tuple[v2.Compose, v2.Compose]:
     """Return train and val/test transforms for BP4D images.
 
     Both resize and center-crop to the target resolution, convert to float
-    [0, 1], and normalise to [-1, 1].  Train adds a random horizontal flip.
+    [0, 1], and normalise to [-1, 1].
 
     Args:
         resolution: Target image resolution (width and height)
+        augmentation_proba: Probability of applying data augmentations
 
     Returns:
         (train_transforms, val_transforms)
@@ -36,7 +44,7 @@ def get_transforms(resolution: int = 512) -> tuple[v2.Compose, v2.Compose]:
         [
             v2.Resize(resolution),
             v2.CenterCrop(resolution),
-            v2.RandomHorizontalFlip(),
+            v2.RandomHorizontalFlip(p=augmentation_proba),
             v2.ToDtype(torch.float32, scale=True),
             v2.Normalize([0.5, 0.5, 0.5], [0.5, 0.5, 0.5]),
         ]
@@ -50,6 +58,36 @@ def get_transforms(resolution: int = 512) -> tuple[v2.Compose, v2.Compose]:
         ]
     )
     return train_transforms, val_transforms
+
+
+def get_dataloaders(params: Params) -> tuple[DataLoader, DataLoader, DataLoader]:
+    """Return train, validation, and test dataloaders for BP4D.
+
+    Args:
+        params: Training parameters.
+
+    Returns:
+        A tuple of train, validation, and test dataloaders.
+    """
+    train_transforms, val_test_transforms = get_transforms(params.augmentation_proba)
+    train_ds = BP4DDataset(index_path=BP4D_TRAIN_INDEX_PATH, transform=train_transforms)
+    val_ds = BP4DDataset(index_path=BP4D_VAL_INDEX_PATH, transform=val_test_transforms)
+    test_ds = BP4DDataset(
+        index_path=BP4D_TEST_INDEX_PATH, transform=val_test_transforms
+    )
+    train_loader = DataLoader(
+        train_ds,
+        batch_size=params.batch_size,
+        shuffle=True,
+        num_workers=params.dataloader.num_workers,
+    )
+    val_loader = DataLoader(
+        val_ds, batch_size=params.batch_size, num_workers=params.dataloader.num_workers
+    )
+    test_loader = DataLoader(
+        test_ds, batch_size=params.batch_size, num_workers=params.dataloader.num_workers
+    )
+    return train_loader, val_loader, test_loader
 
 
 class BP4DSample(TypedDict):
