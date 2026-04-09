@@ -40,6 +40,12 @@ class Params:
     augmentation_proba: float = 0.5
     """Probability of applying augmentations"""
 
+    checkpoint_dir: str = "checkpoints"
+    """Directory to save training checkpoints"""
+
+    checkpoint_every: int = 1
+    """Save a checkpoint every N epochs"""
+
     dataloader: DataloaderParams = field(default_factory=DataloaderParams)
     """Configuration for the dataloader"""
 

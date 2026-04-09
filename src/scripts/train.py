@@ -1,5 +1,7 @@
 """FaceID IP-Adapter + AU adapter training loop on BP4D."""
 
+from pathlib import Path
+
 import torch
 from accelerate import Accelerator
 from accelerate.utils import set_seed
@@ -14,7 +16,13 @@ from msc.cli import cli
 from msc.constants import RANDOM_SEED
 from msc.data.dataset import get_dataloaders
 from msc.model_utils import freeze_model_layers, load_model
-from msc.train_utils import evaluate, train_one_epoch, validate
+from msc.train_utils import (
+    evaluate,
+    load_checkpoint,
+    save_checkpoint,
+    train_one_epoch,
+    validate,
+)
 
 
 @cli()
@@ -90,10 +98,26 @@ def train(cfg: DictConfig) -> None:
 
     tokenizer: CLIPTokenizer = tokenizer
 
+    # Resume from checkpoint if one exists
+    checkpoint_dir = Path(params.checkpoint_dir)
+    checkpoint_dir.mkdir(parents=True, exist_ok=True)
+    checkpoint_path = checkpoint_dir / "checkpoint_latest.pt"
+
+    start_epoch = 0
     best_val_loss = float("inf")
     patience_counter = 0
 
-    for epoch in tqdm(range(params.epochs), desc="Epochs", unit="epoch"):
+    if checkpoint_path.exists():
+        start_epoch, best_val_loss, patience_counter = load_checkpoint(
+            str(checkpoint_path), au_encoder, identity_adapter, au_procs, optimizer
+        )
+        start_epoch += 1  # resume from the next epoch
+        logger.info(
+            f"Resumed from checkpoint: epoch {start_epoch}, "
+            f"best val loss {best_val_loss:.4f}"
+        )
+
+    for epoch in tqdm(range(start_epoch, params.epochs), desc="Epochs", unit="epoch"):
         train_loss = train_one_epoch(
             unet,
             vae,
@@ -135,6 +159,19 @@ def train(cfg: DictConfig) -> None:
             if params.early_stopping and patience_counter >= params.patience:
                 logger.info(f"Early stopping after {epoch + 1} epochs")
                 break
+
+        if (epoch + 1) % params.checkpoint_every == 0:
+            save_checkpoint(
+                str(checkpoint_path),
+                au_encoder,
+                identity_adapter,
+                au_procs,
+                optimizer,
+                epoch,
+                best_val_loss,
+                patience_counter,
+            )
+            logger.info(f"Saved checkpoint at epoch {epoch + 1}")
 
     test_loss = evaluate(
         unet,

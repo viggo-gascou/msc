@@ -1,6 +1,7 @@
 """Training, validation, and evaluation loops for the AU adapter."""
 
 import torch
+import torch.nn as nn
 import torch.nn.functional as F
 from accelerate import Accelerator
 from diffusers import AutoencoderKL, UNet2DConditionModel
@@ -9,7 +10,7 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 from transformers import CLIPTextModel, CLIPTokenizer
 
-from .au_adapter import AUEncoder, IdentityAdapter
+from .au_adapter import AUEncoder, IdentityAdapter, prefixed
 
 
 def forward_batch(
@@ -236,3 +237,91 @@ def evaluate(
             epoch_loss += loss.item()
 
     return epoch_loss / len(loader)
+
+
+def save_checkpoint(
+    path: str,
+    au_encoder: AUEncoder,
+    identity_adapter: IdentityAdapter,
+    au_procs: nn.ModuleDict,
+    optimizer: torch.optim.Optimizer,
+    epoch: int,
+    best_val_loss: float,
+    patience_counter: int,
+) -> None:
+    """Save a resumable training checkpoint.
+
+    Stores model weights (excluding pretrained IP-Adapter projections),
+    optimizer state, and training metadata in a single file via torch.save.
+
+    Args:
+        path: Destination path for the checkpoint file.
+        au_encoder: AU encoder module.
+        identity_adapter: Identity adapter module.
+        au_procs: AU attention processors (ModuleDict).
+        optimizer: Current optimizer.
+        epoch: Last completed epoch (0-indexed).
+        best_val_loss: Best validation loss seen so far.
+        patience_counter: Current early-stopping patience count.
+    """
+    procs_sd = {
+        k: v
+        for k, v in au_procs.state_dict().items()
+        if not k.endswith(("to_k_ip.weight", "to_v_ip.weight"))
+    }
+    flat: dict[str, torch.Tensor] = {}
+    flat.update(prefixed(au_encoder.state_dict(), "au_encoder"))
+    flat.update(prefixed(identity_adapter.state_dict(), "identity_adapter"))
+    flat.update(prefixed(procs_sd, "au_procs"))
+
+    torch.save(
+        {
+            "model": flat,
+            "optimizer": optimizer.state_dict(),
+            "epoch": epoch,
+            "best_val_loss": best_val_loss,
+            "patience_counter": patience_counter,
+        },
+        path,
+    )
+
+
+def load_checkpoint(
+    path: str,
+    au_encoder: AUEncoder,
+    identity_adapter: IdentityAdapter,
+    au_procs: nn.ModuleDict,
+    optimizer: torch.optim.Optimizer,
+) -> tuple[int, float, int]:
+    """Load a training checkpoint in-place.
+
+    Restores model weights and optimizer state into existing objects and
+    returns the saved training metadata.
+
+    Args:
+        path: Path to the checkpoint file produced by save_checkpoint.
+        au_encoder: AU encoder to restore weights into.
+        identity_adapter: Identity adapter to restore weights into.
+        au_procs: AU processors to restore weights into.
+        optimizer: Optimizer to restore state into.
+
+    Returns:
+        Tuple of (epoch, best_val_loss, patience_counter).
+    """
+    checkpoint = torch.load(path, map_location="cpu", weights_only=False)
+    flat: dict[str, torch.Tensor] = checkpoint["model"]
+
+    def _strip(prefix: str) -> dict[str, torch.Tensor]:
+        n = len(prefix) + 1
+        return {k[n:]: v for k, v in flat.items() if k.startswith(prefix + ".")}
+
+    au_encoder.load_state_dict(_strip("au_encoder"))
+    identity_adapter.load_state_dict(_strip("identity_adapter"))
+    au_procs.load_state_dict(_strip("au_procs"), strict=False)
+    optimizer.load_state_dict(checkpoint["optimizer"])
+
+    return (
+        checkpoint["epoch"],
+        checkpoint["best_val_loss"],
+        checkpoint["patience_counter"],
+    )

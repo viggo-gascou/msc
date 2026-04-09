@@ -86,6 +86,9 @@ target/
 # Logs
 logs/
 
+# Training checkpoints
+checkpoints/
+
 # Data
 data/*
 !data/results
