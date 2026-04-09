@@ -36,6 +36,13 @@ case "$MODE" in
         shift
         submit_job "$@" jobs/run.job "$SCRIPT"
         ;;
+    sync-run)
+        SCRIPT=$1
+        shift
+        submit_job "$@" jobs/sync.job
+        SYNC_ID=$LAST_JOB_ID
+        submit_job --dependency=afterok:$SYNC_ID "$@" jobs/run.job "$SCRIPT"
+        ;;
     *)
         echo "Usage: $0 [sync|train|sync-train|run] [extra sbatch args]"
         exit 1
