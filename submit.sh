@@ -1,11 +1,12 @@
 #!/bin/bash
-# Usage: ./submit.sh [sync|train|sync-train] [extra sbatch args for train]
+# Usage: ./submit.sh [sync|train|sync-train|run] [extra sbatch args]
 # Example: ./submit.sh train --nodelist=cn13
 #          ./submit.sh sync-train --nodelist=cn13 --time=4:00:00
+#          ./submit.sh run <script> [extra sbatch args]
 
 MODE="$1"
 shift
-# remaining args passed to train sbatch call
+# remaining args passed to sbatch call
 
 mkdir -p logs/SLURM
 
@@ -20,18 +21,23 @@ submit_job() {
 
 case "$MODE" in
     sync)
-        submit_job jobs/sync.job
+        submit_job "$@" jobs/sync.job
         ;;
     train)
         submit_job "$@" jobs/train.job
         ;;
     sync-train)
-        submit_job jobs/sync.job
+        submit_job "$@" jobs/sync.job
         SYNC_ID=$LAST_JOB_ID
         submit_job --dependency=afterok:$SYNC_ID "$@" jobs/train.job
         ;;
+    run)
+        SCRIPT=$1
+        shift
+        submit_job "$@" jobs/run.job "$SCRIPT"
+        ;;
     *)
-        echo "Usage: $0 [sync|train|sync-train] [extra sbatch args for train]"
+        echo "Usage: $0 [sync|train|sync-train|run] [extra sbatch args]"
         exit 1
         ;;
 esac
