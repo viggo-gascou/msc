@@ -26,7 +26,7 @@ from .bp4d import load_index, resolve_frame_path
 
 
 def get_transforms(
-    resolution: int = 512, augmentation_proba: float
+    augmentation_proba: float, resolution: int = 512
 ) -> tuple[v2.Compose, v2.Compose]:
     """Return train and val/test transforms for BP4D images.
 
@@ -34,8 +34,8 @@ def get_transforms(
     [0, 1], and normalise to [-1, 1].
 
     Args:
-        resolution: Target image resolution (width and height)
         augmentation_proba: Probability of applying data augmentations
+        resolution: Target image resolution (width and height)
 
     Returns:
         (train_transforms, val_transforms)
