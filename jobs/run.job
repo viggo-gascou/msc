@@ -27,3 +27,5 @@ export NO_ALBUMENTATIONS_UPDATE=1
 SCRIPT="$1"
 
 uv run "$SCRIPT"
+
+echo "Done, finished at $(date)"

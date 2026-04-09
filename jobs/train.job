@@ -33,3 +33,5 @@ echo "Total GPU RAM: ${VRAM_TOTAL} MiB"
 
 # run the script
 uv run src/scripts/train.py
+
+echo "Done, finished at $(date)"
