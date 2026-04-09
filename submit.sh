@@ -3,7 +3,7 @@
 # Example: ./submit.sh train --nodelist=cn13
 #          ./submit.sh sync-train --nodelist=cn13 --time=4:00:00
 
-MODE=${1:-train}
+MODE="$1"
 shift
 # remaining args passed to train sbatch call
 
