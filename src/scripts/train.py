@@ -3,61 +3,41 @@
 import torch
 import torch.nn.functional as F
 from accelerate import Accelerator
-from diffusers import StableDiffusionPipeline
+from accelerate.utils import set_seed
+from loguru import logger
 from omegaconf import DictConfig
-from torch.utils.data import DataLoader
 from tqdm import tqdm
-from transformers import CLIPTokenizer
 
 from msc.cli import cli
-from msc.data.dataset import BP4DDataset, get_transforms
+from msc.constants import RANDOM_SEED
+from msc.data import get_dataloaders
+from msc.train_utils import freeze_model_layers, load_model
 
 
 @cli()
 def train(cfg: DictConfig) -> None:
     """Train a model on BP4D."""
+    set_seed(RANDOM_SEED)
     accelerator = Accelerator()
     device = accelerator.device
 
     params = cfg.parameters
     ip_cfg = cfg.ip_adapter
 
-    pipeline = StableDiffusionPipeline.from_pretrained(params.unet_model)
-    pipeline.load_ip_adapter(
-        ip_cfg.repo,
-        subfolder="",
-        weight_name=ip_cfg.weight_id,
-        image_encoder_folder=None,
+    pipeline, unet, vae, text_encoder, tokenizer, scheduler = load_model(params, ip_cfg)
+    unet, vae, text_encoder = freeze_model_layers(unet, vae, text_encoder)
+
+    train_loader, val_loader, test_loader = get_dataloaders(params)
+
+    # TODO: add optimizer
+    unet, vae, text_encoder = accelerator.prepare(unet, vae, text_encoder)
+    train_loader, val_loader, test_loader = accelerator.prepare(
+        train_loader, val_loader, test_loader
     )
-    pipeline.set_ip_adapter_scale(scale=0.6)
-
-    unet = pipeline.unet
-    vae = pipeline.vae
-    text_encoder = pipeline.text_encoder
-    tokenizer: CLIPTokenizer = pipeline.tokenizer
-    scheduler = pipeline.scheduler
-
-    # Freeze everything
-    for model in [unet, vae, text_encoder]:
-        for p in model.parameters():
-            p.requires_grad = False
-    if unet.encoder_hid_proj is not None:
-        for p in unet.encoder_hid_proj.parameters():
-            p.requires_grad = False
-
-    train_tf, val_tf = get_transforms()
-    dataset = BP4DDataset(transform=train_tf)
-    loader = DataLoader(
-        dataset, batch_size=params.batch_size, shuffle=True, num_workers=4
-    )
-
-    unet, loader = accelerator.prepare(unet, loader)
-    for model in [vae, text_encoder]:
-        model.to(device)
 
     for epoch in tqdm(range(params.epochs), desc="Epochs", unit="epoch"):
         epoch_loss = 0.0
-        for batch in tqdm(loader, desc="Training", unit="batch", leave=False):
+        for batch in tqdm(train_loader, desc="Training", unit="batch", leave=False):
             pixel_values = batch["image"].to(device)
             faceid_embeds = batch["arcface"].to(device)
 
@@ -96,7 +76,7 @@ def train(cfg: DictConfig) -> None:
             # TODO: enable backward pass once trainable params are added
             # accelerator.backward(loss)
 
-        print(f"epoch {epoch + 1} | loss {epoch_loss / len(loader):.4f}")
+        logger.info(f"epoch {epoch + 1} | loss {epoch_loss / len(train_loader):.4f}")
 
 
 if __name__ == "__main__":

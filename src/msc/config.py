@@ -8,6 +8,14 @@ DEFAULT_ONNX_PROVIDERS = [ONNXProvider.CUDA, ONNXProvider.COREML, ONNXProvider.C
 
 
 @dataclass
+class DataloaderParams:
+    """Configuration for the dataloader."""
+
+    num_workers: int = 2
+    """Number of workers for data loading"""
+
+
+@dataclass
 class Params:
     """Configuration for the project."""
 
@@ -28,6 +36,12 @@ class Params:
 
     early_stopping: bool = True
     """Whether to use early stopping"""
+
+    augmentation_proba: float = 0.5
+    """Probability of applying augmentations"""
+
+    dataloader: DataloaderParams = field(default_factory=DataloaderParams)
+    """Configuration for the dataloader"""
 
 
 @dataclass
@@ -59,10 +73,10 @@ class IdentityLoss:
 class Args:
     """Top level arguments for the project."""
 
-    identity: IdentityLoss
+    identity: IdentityLoss = field(default_factory=IdentityLoss)
     """Identity loss configuration"""
 
-    parameters: Params
+    parameters: Params = field(default_factory=Params)
     """Project parameters"""
 
     ip_adapter: IPAdapter = field(default_factory=IPAdapter)
