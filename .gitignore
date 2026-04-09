@@ -97,8 +97,8 @@ data/*
 models/*
 !models/.gitkeep
 
-# Dotenv file with name and email
-.name_and_email
+# wandb
+results/wandb/*
 
 # Linting cache
 .ruff_cache/
