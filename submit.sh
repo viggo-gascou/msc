@@ -21,13 +21,13 @@ submit_job() {
 
 case "$MODE" in
     sync)
-        submit_job "$@" jobs/sync.job
+        submit_job jobs/sync.job
         ;;
     train)
         submit_job "$@" jobs/train.job
         ;;
     sync-train)
-        submit_job "$@" jobs/sync.job
+        submit_job jobs/sync.job
         SYNC_ID=$LAST_JOB_ID
         submit_job --dependency=afterok:$SYNC_ID "$@" jobs/train.job
         ;;
@@ -39,7 +39,7 @@ case "$MODE" in
     sync-run)
         SCRIPT=$1
         shift
-        submit_job "$@" jobs/sync.job
+        submit_job jobs/sync.job
         SYNC_ID=$LAST_JOB_ID
         submit_job --dependency=afterok:$SYNC_ID "$@" jobs/run.job "$SCRIPT"
         ;;
