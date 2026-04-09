@@ -70,6 +70,23 @@ class IdentityLoss:
 
 
 @dataclass
+class WandB:
+    """Configuration for Weights & Biases logging."""
+
+    enabled: bool = True
+    """Whether to log to W&B"""
+
+    project: str = "semedit"
+    """W&B project name"""
+
+    entity: str = "msc-semedit"
+    """W&B entity (team or username)."""
+
+    run_name: str | None = None
+    """Optional run name. None lets W&B auto-generate one."""
+
+
+@dataclass
 class Args:
     """Top level arguments for the project."""
 
@@ -81,6 +98,9 @@ class Args:
 
     ip_adapter: IPAdapter = field(default_factory=IPAdapter)
     """IP-Adapter configuration"""
+
+    wandb: WandB = field(default_factory=WandB)
+    """Weights & Biases configuration"""
 
     log_level: LogLevel = LogLevel.INFO
     """Logging level"""

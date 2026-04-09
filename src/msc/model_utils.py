@@ -5,8 +5,12 @@ import typing as t
 from diffusers import StableDiffusionPipeline
 from diffusers.models import AutoencoderKL, UNet2DConditionModel
 from diffusers.schedulers import DDIMScheduler, LMSDiscreteScheduler, PNDMScheduler
+from huggingface_hub import hf_hub_download
 from omegaconf import DictConfig
+from torch import nn
 from transformers import CLIPTextModel, CLIPTokenizer
+
+from .au_adapter import load_ip_adapter_weights, setup_unet_processors
 
 
 def load_model(
@@ -18,8 +22,9 @@ def load_model(
     CLIPTextModel,
     CLIPTokenizer,
     t.Union[DDIMScheduler, LMSDiscreteScheduler, PNDMScheduler],
+    nn.ModuleDict,
 ]:
-    """Load the model and return the pipeline and its components.
+    """Load the pipeline and set up unified AU+IP-Adapter attention processors.
 
     Args:
         params:
@@ -28,22 +33,15 @@ def load_model(
             IP adapter configuration.
 
     Returns:
-        A tuple containing the pipeline and its components.
+        A tuple of (pipeline, unet, vae, text_encoder, tokenizer, scheduler,
+        au_procs).
 
     Raises:
         ValueError: If the pipeline fails to load.
-
     """
     pipeline = StableDiffusionPipeline.from_pretrained(params.unet_model)
     if pipeline is None:
         raise ValueError("Failed to load pipeline")
-    pipeline.load_ip_adapter(
-        ip_cfg.repo,
-        subfolder="",
-        weight_name=ip_cfg.weight_id,
-        image_encoder_folder=None,
-    )
-    pipeline.set_ip_adapter_scale(scale=0.6)
 
     unet: UNet2DConditionModel = pipeline.unet
     vae: AutoencoderKL = pipeline.vae
@@ -53,7 +51,14 @@ def load_model(
         pipeline.scheduler
     )
 
-    return pipeline, unet, vae, text_encoder, tokenizer, scheduler
+    # Replace all cross-attention processors with unified AU+IP-Adapter ones
+    au_procs = setup_unet_processors(unet)
+
+    # Load pretrained IP-Adapter weights into the processors
+    ip_adapter_path = hf_hub_download(repo_id=ip_cfg.repo, filename=ip_cfg.weight_id)
+    load_ip_adapter_weights(unet, ip_adapter_path)
+
+    return pipeline, unet, vae, text_encoder, tokenizer, scheduler, au_procs
 
 
 def freeze_model_layers(
