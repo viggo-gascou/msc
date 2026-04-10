@@ -43,8 +43,6 @@ def get_transforms(
     train_transforms = v2.Compose(
         [
             v2.Resize(resolution),
-            v2.CenterCrop(resolution),
-            v2.RandomHorizontalFlip(p=augmentation_proba),
             v2.ToDtype(torch.float32, scale=True),
             v2.Normalize([0.5, 0.5, 0.5], [0.5, 0.5, 0.5]),
         ]
@@ -52,7 +50,6 @@ def get_transforms(
     val_transforms = v2.Compose(
         [
             v2.Resize(resolution),
-            v2.CenterCrop(resolution),
             v2.ToDtype(torch.float32, scale=True),
             v2.Normalize([0.5, 0.5, 0.5], [0.5, 0.5, 0.5]),
         ]
@@ -71,17 +68,10 @@ def get_dataloaders(params: Params) -> tuple[DataLoader, DataLoader, DataLoader]
     """
     train_transforms, val_test_transforms = get_transforms(params.augmentation_proba)
 
-    train_ds = BP4DDataset(
-        index_path=BP4D_TRAIN_INDEX_PATH,
-        transform=train_transforms,
-    )
-    val_ds = BP4DDataset(
-        index_path=BP4D_VAL_INDEX_PATH,
-        transform=val_test_transforms,
-    )
+    train_ds = BP4DDataset(index_path=BP4D_TRAIN_INDEX_PATH, transform=train_transforms)
+    val_ds = BP4DDataset(index_path=BP4D_VAL_INDEX_PATH, transform=val_test_transforms)
     test_ds = BP4DDataset(
-        index_path=BP4D_TEST_INDEX_PATH,
-        transform=val_test_transforms,
+        index_path=BP4D_TEST_INDEX_PATH, transform=val_test_transforms
     )
     train_loader = DataLoader(
         train_ds,

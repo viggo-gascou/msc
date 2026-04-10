@@ -152,9 +152,7 @@ def train(cfg: DictConfig) -> None:
             device,
         )
         logger.info(f"epoch {epoch + 1} | train {train_loss:.4f} | val {val_loss:.4f}")
-        accelerator.log(
-            {"train/loss": train_loss, "val/loss": val_loss}, step=epoch + 1
-        )
+        accelerator.log({"train/loss": train_loss, "val/loss": val_loss})
 
         if val_loss < best_val_loss:
             best_val_loss = val_loss
