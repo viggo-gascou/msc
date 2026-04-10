@@ -17,8 +17,6 @@ export UV_NO_DEV=1          # skip dev dependencies
 
 ## RUN
 
-git pull
-
 uv sync
 
 echo "Done, finished at $(date)"
