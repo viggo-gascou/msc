@@ -46,6 +46,12 @@ class Params:
     checkpoint_every: int = 1
     """Save a checkpoint every N epochs"""
 
+    gradient_accumulation_steps: int = 1
+    """Number of gradient accumulation steps before an optimizer update."""
+
+    max_grad_norm: float = 1.0
+    """Maximum gradient norm for clipping."""
+
     dataloader: DataloaderParams = field(default_factory=DataloaderParams)
     """Configuration for the dataloader"""
 
@@ -55,10 +61,10 @@ class IPAdapter:
     """Configuration for the IP adapter."""
 
     repo: str = "h94/IP-Adapter-FaceID"
-    """The IP adapter repo to use"""
+    """The IP adapter repo to use."""
 
-    weight_id: str = "ip-adapter-faceid_sd15.bin"
-    """The IP adapter weight id to use"""
+    weight_id: str = "ip-adapter-faceid-portrait-v11_sd15.bin"
+    """The IP adapter weights file to use."""
 
 
 @dataclass

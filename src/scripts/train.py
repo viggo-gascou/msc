@@ -35,7 +35,10 @@ def train(cfg: DictConfig) -> None:
     ip_cfg = cfg.ip_adapter
     wandb_cfg = cfg.wandb
 
-    accelerator = Accelerator(log_with="wandb" if wandb_cfg.enabled else None)
+    accelerator = Accelerator(
+        gradient_accumulation_steps=params.gradient_accumulation_steps,
+        log_with="wandb" if wandb_cfg.enabled else None,
+    )
     device = accelerator.device
 
     if wandb_cfg.enabled:
@@ -60,16 +63,21 @@ def train(cfg: DictConfig) -> None:
             },
         )
 
-    pipeline, unet, vae, text_encoder, tokenizer, scheduler, au_procs = load_model(
+    unet, vae, text_encoder, tokenizer, scheduler, au_procs, face_proj = load_model(
         params, ip_cfg
     )
-    unet, vae, text_encoder = freeze_model_layers(unet, vae, text_encoder)
+    unet, vae, text_encoder, au_procs = freeze_model_layers(
+        unet, vae, text_encoder, au_procs
+    )
 
-    # Unfreeze AU projection weights only
-    for proc in au_procs.values():
-        for name, p in proc.named_parameters():
-            if "to_k_au" in name or "to_v_au" in name:
-                p.requires_grad = True
+    # Cast frozen components to the accelerator's dtype; trainable parts stay
+    # in fp32 and are handled by Accelerate's mixed precision autocast.
+    weight_dtype = {"fp16": torch.float16, "bf16": torch.bfloat16}.get(
+        accelerator.mixed_precision, torch.float32
+    )
+    for model in [vae, text_encoder, face_proj]:
+        model.to(device, dtype=weight_dtype)
+    face_proj.requires_grad_(False)
 
     au_encoder = AUEncoder()
     identity_adapter = IdentityAdapter()
@@ -93,8 +101,6 @@ def train(cfg: DictConfig) -> None:
     unet, au_encoder, identity_adapter, optimizer, train_loader = accelerator.prepare(
         unet, au_encoder, identity_adapter, optimizer, train_loader
     )
-    for model in [vae, text_encoder]:
-        model.to(device)
 
     tokenizer: CLIPTokenizer = tokenizer
 
@@ -126,10 +132,12 @@ def train(cfg: DictConfig) -> None:
             scheduler,
             au_encoder,
             identity_adapter,
+            face_proj,
             optimizer,
             train_loader,
             accelerator,
             device,
+            max_grad_norm=params.max_grad_norm,
         )
         val_loss = validate(
             unet,
@@ -139,6 +147,7 @@ def train(cfg: DictConfig) -> None:
             scheduler,
             au_encoder,
             identity_adapter,
+            face_proj,
             val_loader,
             device,
         )
@@ -150,17 +159,21 @@ def train(cfg: DictConfig) -> None:
         if val_loss < best_val_loss:
             best_val_loss = val_loss
             patience_counter = 0
-            save_au_adapter(
-                au_encoder, identity_adapter, au_procs, "best_au_adapter.safetensors"
-            )
-            logger.info(f"Saved best model (val loss {best_val_loss:.4f})")
+            if accelerator.is_main_process:
+                save_au_adapter(
+                    au_encoder,
+                    identity_adapter,
+                    au_procs,
+                    "best_au_adapter.safetensors",
+                )
+                logger.info(f"Saved best model (val loss {best_val_loss:.4f})")
         else:
             patience_counter += 1
             if params.early_stopping and patience_counter >= params.patience:
                 logger.info(f"Early stopping after {epoch + 1} epochs")
                 break
 
-        if (epoch + 1) % params.checkpoint_every == 0:
+        if (epoch + 1) % params.checkpoint_every == 0 and accelerator.is_main_process:
             save_checkpoint(
                 str(checkpoint_path),
                 au_encoder,
@@ -181,6 +194,7 @@ def train(cfg: DictConfig) -> None:
         scheduler,
         au_encoder,
         identity_adapter,
+        face_proj,
         test_loader,
         device,
     )

@@ -70,10 +70,18 @@ def get_dataloaders(params: Params) -> tuple[DataLoader, DataLoader, DataLoader]
         A tuple of train, validation, and test dataloaders.
     """
     train_transforms, val_test_transforms = get_transforms(params.augmentation_proba)
-    train_ds = BP4DDataset(index_path=BP4D_TRAIN_INDEX_PATH, transform=train_transforms)
-    val_ds = BP4DDataset(index_path=BP4D_VAL_INDEX_PATH, transform=val_test_transforms)
+
+    train_ds = BP4DDataset(
+        index_path=BP4D_TRAIN_INDEX_PATH,
+        transform=train_transforms,
+    )
+    val_ds = BP4DDataset(
+        index_path=BP4D_VAL_INDEX_PATH,
+        transform=val_test_transforms,
+    )
     test_ds = BP4DDataset(
-        index_path=BP4D_TEST_INDEX_PATH, transform=val_test_transforms
+        index_path=BP4D_TEST_INDEX_PATH,
+        transform=val_test_transforms,
     )
     train_loader = DataLoader(
         train_ds,

@@ -10,7 +10,7 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 from transformers import CLIPTextModel, CLIPTokenizer
 
-from .au_adapter import AUEncoder, IdentityAdapter, prefixed
+from .au_adapter import AUEncoder, IdentityAdapter, MLPProjModel, prefixed
 
 
 def forward_batch(
@@ -22,6 +22,7 @@ def forward_batch(
     scheduler: DDIMScheduler | LMSDiscreteScheduler | PNDMScheduler,
     au_encoder: AUEncoder,
     identity_adapter: IdentityAdapter,
+    face_proj: MLPProjModel,
     device: torch.device,
 ) -> torch.Tensor:
     """Shared forward pass for train, val, and test.
@@ -35,17 +36,21 @@ def forward_batch(
         scheduler: Noise scheduler.
         au_encoder: AU conditioning encoder.
         identity_adapter: Identity-conditioned AU token adapter.
+        face_proj: Pretrained MLP projecting ArcFace → IP-Adapter face tokens.
         device: Target device.
 
     Returns:
         Scalar MSE loss between predicted and actual noise.
     """
-    pixel_values = batch["image"].to(device)
-    arcface_embeds = batch["arcface"].to(device)
+    vae_dtype = next(vae.parameters()).dtype
+    proj_dtype = next(face_proj.parameters()).dtype
+    pixel_values = batch["image"].to(device=device, dtype=vae_dtype)
+    arcface_embeds = batch["arcface"].to(device=device, dtype=proj_dtype)
     au_values = batch["aus"].to(device)
 
     au_tokens = au_encoder(au_values)
     au_tokens = identity_adapter(au_tokens, arcface_embeds)
+    id_tokens = face_proj(arcface_embeds)
 
     latents = vae.encode(pixel_values).latent_dist.sample()
     latents = latents * vae.config.scaling_factor
@@ -72,7 +77,7 @@ def forward_batch(
         timestep=timesteps,
         encoder_hidden_states=cond,
         cross_attention_kwargs={
-            "id_embedding": arcface_embeds.unsqueeze(1),
+            "id_embedding": id_tokens,
             "id_scale": 1.0,
             "au_embedding": au_tokens,
             "au_scale": 1.0,
@@ -89,10 +94,12 @@ def train_one_epoch(
     scheduler: DDIMScheduler | LMSDiscreteScheduler | PNDMScheduler,
     au_encoder: AUEncoder,
     identity_adapter: IdentityAdapter,
+    face_proj: MLPProjModel,
     optimizer: torch.optim.Optimizer,
     loader: DataLoader,
     accelerator: Accelerator,
     device: torch.device,
+    max_grad_norm: float = 1.0,
 ) -> float:
     """Train all trainable components for one epoch.
 
@@ -104,10 +111,12 @@ def train_one_epoch(
         scheduler: Noise scheduler.
         au_encoder: Trainable AU encoder.
         identity_adapter: Trainable identity adapter.
+        face_proj: Frozen face projector (ArcFace → IP-Adapter tokens).
         optimizer: AdamW optimizer.
         loader: Training dataloader.
-        accelerator: Accelerate wrapper (logs via accelerator.log if trackers set up).
+        accelerator: Accelerate wrapper.
         device: Target device.
+        max_grad_norm: Maximum gradient norm for clipping.
 
     Returns:
         Average training loss for the epoch.
@@ -116,9 +125,10 @@ def train_one_epoch(
     au_encoder.train()
     identity_adapter.train()
     epoch_loss = 0.0
+    trainable_params = [p for pg in optimizer.param_groups for p in pg["params"]]
 
     for batch in tqdm(loader, desc="Training", unit="batch", leave=False):
-        with accelerator.accumulate(unet):
+        with accelerator.accumulate(unet, au_encoder, identity_adapter):
             loss = forward_batch(
                 batch,
                 unet,
@@ -128,13 +138,19 @@ def train_one_epoch(
                 scheduler,
                 au_encoder,
                 identity_adapter,
+                face_proj,
                 device,
             )
-            epoch_loss += loss.item()
-            accelerator.log({"train/batch_loss": loss.item()})
             accelerator.backward(loss)
+            if accelerator.sync_gradients:
+                accelerator.clip_grad_norm_(trainable_params, max_grad_norm)
             optimizer.step()
             optimizer.zero_grad()
+
+        gathered_loss = accelerator.gather(loss.detach()).mean()
+        epoch_loss += gathered_loss.item()
+        if accelerator.sync_gradients:
+            accelerator.log({"train/batch_loss": gathered_loss.item()})
 
     return epoch_loss / len(loader)
 
@@ -147,6 +163,7 @@ def validate(
     scheduler: DDIMScheduler | LMSDiscreteScheduler | PNDMScheduler,
     au_encoder: AUEncoder,
     identity_adapter: IdentityAdapter,
+    face_proj: MLPProjModel,
     loader: DataLoader,
     device: torch.device,
 ) -> float:
@@ -160,6 +177,7 @@ def validate(
         scheduler: Noise scheduler.
         au_encoder: AU encoder.
         identity_adapter: Identity adapter.
+        face_proj: Face projector.
         loader: Validation dataloader.
         device: Target device.
 
@@ -182,6 +200,7 @@ def validate(
                 scheduler,
                 au_encoder,
                 identity_adapter,
+                face_proj,
                 device,
             )
             epoch_loss += loss.item()
@@ -197,6 +216,7 @@ def evaluate(
     scheduler: DDIMScheduler | LMSDiscreteScheduler | PNDMScheduler,
     au_encoder: AUEncoder,
     identity_adapter: IdentityAdapter,
+    face_proj: MLPProjModel,
     loader: DataLoader,
     device: torch.device,
 ) -> float:
@@ -210,6 +230,7 @@ def evaluate(
         scheduler: Noise scheduler.
         au_encoder: AU encoder.
         identity_adapter: Identity adapter.
+        face_proj: Face projector.
         loader: Test dataloader.
         device: Target device.
 
@@ -232,6 +253,7 @@ def evaluate(
                 scheduler,
                 au_encoder,
                 identity_adapter,
+                face_proj,
                 device,
             )
             epoch_loss += loss.item()
