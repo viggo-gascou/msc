@@ -15,8 +15,8 @@ mkdir -p logs/SLURM
 REPO_ROOT="$(dirname "$(realpath "${BASH_SOURCE[0]}")")"
 
 submit_job() {
-    # if mode sync git pull
-    if [[ "$MODE" == "sync" ]]; then
+    # if mode sync or sync-train git pull
+    if [[ "$MODE" == "sync" || "$MODE" == "sync-train" ]]; then
         git pull
     fi
     LAST_JOB_ID=$(sbatch --parsable --chdir="$REPO_ROOT" "$@")
