@@ -56,6 +56,7 @@ def train(cfg: Args) -> None:
                 "augmentation_proba": params.augmentation_proba,
                 "early_stopping": params.early_stopping,
                 "patience": params.patience,
+                "gradient_checkpointing": params.gradient_checkpointing,
                 "unet_model": params.unet_model,
                 "ip_adapter_repo": ip_cfg.repo,
                 "ip_adapter_weight_id": ip_cfg.weight_id,
@@ -74,6 +75,9 @@ def train(cfg: Args) -> None:
     unet, vae, text_encoder, au_procs = freeze_model_layers(
         unet, vae, text_encoder, au_procs
     )
+
+    if params.gradient_checkpointing:
+        unet.unet.enable_gradient_checkpointing()
 
     # Cast frozen components to the accelerator's dtype; trainable parts stay
     # in fp32 and are handled by Accelerate's mixed precision autocast.
@@ -162,6 +166,7 @@ def train(cfg: Args) -> None:
             identity_adapter,
             face_proj,
             val_loader,
+            accelerator,
             device,
         )
         logger.info(f"epoch {epoch + 1} | train {train_loss:.4f} | val {val_loss:.4f}")
@@ -208,6 +213,7 @@ def train(cfg: Args) -> None:
         identity_adapter,
         face_proj,
         test_loader,
+        accelerator,
         device,
     )
     logger.info(f"test loss: {test_loss:.4f}")

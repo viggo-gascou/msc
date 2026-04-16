@@ -75,6 +75,9 @@ class Params:
     max_grad_norm: float = 1.0
     """Maximum gradient norm for clipping."""
 
+    gradient_checkpointing: bool = False
+    """Enable gradient checkpointing on the UNet to reduce VRAM usage."""
+
 
 @dataclass
 class IPAdapter:
