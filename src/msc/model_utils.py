@@ -39,9 +39,10 @@ def expand_unet_in_channels(unet: UNet2DConditionModel) -> None:
     new_conv = nn.Conv2d(
         8, old.out_channels, kernel_size=old.kernel_size, padding=old.padding
     )
-    new_conv.weight.zero_()
-    new_conv.weight[:, :4].copy_(old.weight)
-    new_conv.bias.copy_(old.bias)
+    with torch.no_grad():
+        new_conv.weight.zero_()
+        new_conv.weight[:, :4].copy_(old.weight)
+        new_conv.bias.copy_(old.bias)
     unet.conv_in = new_conv
     unet.config["in_channels"] = 8
 
