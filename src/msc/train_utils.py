@@ -44,9 +44,9 @@ def forward_batch(
     """
     vae_dtype = next(vae.parameters()).dtype
     proj_dtype = next(face_proj.parameters()).dtype
-    pixel_values = batch["image"].to(device=device, dtype=vae_dtype)
+    pixel_values = batch["target_image"].to(device=device, dtype=vae_dtype)
     arcface_embeds = batch["arcface"].to(device=device, dtype=proj_dtype)
-    au_values = batch["aus"].to(device)
+    au_values = batch["target_aus"].to(device)
 
     au_tokens = au_encoder(au_values)
     au_tokens = identity_adapter(au_tokens, arcface_embeds)
@@ -165,6 +165,7 @@ def validate(
     identity_adapter: IdentityAdapter,
     face_proj: MLPProjModel,
     loader: DataLoader,
+    accelerator: Accelerator,
     device: torch.device,
 ) -> float:
     """Evaluate loss on the validation set.
@@ -179,6 +180,7 @@ def validate(
         identity_adapter: Identity adapter.
         face_proj: Face projector.
         loader: Validation dataloader.
+        accelerator: Accelerator.
         device: Target device.
 
     Returns:
@@ -204,6 +206,7 @@ def validate(
                 device,
             )
             epoch_loss += loss.item()
+            accelerator.log({"val/batch_loss": loss.item()})
 
     return epoch_loss / len(loader)
 
@@ -218,6 +221,7 @@ def evaluate(
     identity_adapter: IdentityAdapter,
     face_proj: MLPProjModel,
     loader: DataLoader,
+    accelerator: Accelerator,
     device: torch.device,
 ) -> float:
     """Evaluate loss on the test set.
@@ -232,6 +236,7 @@ def evaluate(
         identity_adapter: Identity adapter.
         face_proj: Face projector.
         loader: Test dataloader.
+        accelerator: Accelerator.
         device: Target device.
 
     Returns:
@@ -257,6 +262,7 @@ def evaluate(
                 device,
             )
             epoch_loss += loss.item()
+            accelerator.log({"test/batch_loss": loss.item()})
 
     return epoch_loss / len(loader)
 

@@ -12,7 +12,7 @@ from torchvision.io import ImageReadMode, decode_image
 from torchvision.transforms import v2
 from torchvision.tv_tensors import Image as TVImage
 
-from ..config import Params
+from ..config import DataloaderParams
 from ..constants import (
     BP4D_AU_COLUMNS,
     BP4D_EMBEDDINGS_DIR,
@@ -57,16 +57,19 @@ def get_transforms(
     return train_transforms, val_transforms
 
 
-def get_dataloaders(params: Params) -> tuple[DataLoader, DataLoader, DataLoader]:
+def get_dataloaders(
+    dataloader_params: DataloaderParams, augmentation_proba: float
+) -> tuple[DataLoader, DataLoader, DataLoader]:
     """Return train, validation, and test dataloaders for BP4D.
 
     Args:
-        params: Training parameters.
+        dataloader_params: Dataloader configuration (batch size, num workers).
+        augmentation_proba: Probability of applying data augmentations.
 
     Returns:
         A tuple of train, validation, and test dataloaders.
     """
-    train_transforms, val_test_transforms = get_transforms(params.augmentation_proba)
+    train_transforms, val_test_transforms = get_transforms(augmentation_proba)
 
     train_ds = BP4DDataset(index_path=BP4D_TRAIN_INDEX_PATH, transform=train_transforms)
     val_ds = BP4DDataset(index_path=BP4D_VAL_INDEX_PATH, transform=val_test_transforms)
@@ -75,15 +78,19 @@ def get_dataloaders(params: Params) -> tuple[DataLoader, DataLoader, DataLoader]
     )
     train_loader = DataLoader(
         train_ds,
-        batch_size=params.batch_size,
+        batch_size=dataloader_params.batch_size,
         shuffle=True,
-        num_workers=params.dataloader.num_workers,
+        num_workers=dataloader_params.num_workers,
     )
     val_loader = DataLoader(
-        val_ds, batch_size=params.batch_size, num_workers=params.dataloader.num_workers
+        val_ds,
+        batch_size=dataloader_params.batch_size,
+        num_workers=dataloader_params.num_workers,
     )
     test_loader = DataLoader(
-        test_ds, batch_size=params.batch_size, num_workers=params.dataloader.num_workers
+        test_ds,
+        batch_size=dataloader_params.batch_size,
+        num_workers=dataloader_params.num_workers,
     )
     return train_loader, val_loader, test_loader
 

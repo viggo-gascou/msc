@@ -72,9 +72,9 @@ def load_model(
 
 
 def load_inference_pipeline(
-    params: DictConfig, ip_cfg: DictConfig, au_ckpt_path: str
+    params: DictConfig, ip_cfg: DictConfig, au_ckpt_path: str, device: str = "cuda"
 ) -> "AUIPAdapterPipeline":
-    """Load a trained MSCPipeline ready for inference.
+    """Load a trained AUIPAdapterPipeline ready for inference.
 
     Loads the base Stable Diffusion weights, installs AU+IP-Adapter processors,
     and restores trained AU adapter weights from a checkpoint.
@@ -87,17 +87,26 @@ def load_inference_pipeline(
         au_ckpt_path:
             Path to the AU adapter safetensors checkpoint produced by
             `save_au_adapter`.
+        device:
+            Target device string (e.g. `"cuda"` or `"cpu"`). Weights are
+            loaded in bfloat16 on CUDA and float32 on CPU.
 
     Returns:
-        `MSCPipeline` with all weights loaded, in eval mode.
+        `AUIPAdapterPipeline` with all weights loaded.
 
     Raises:
         ValueError: If the base pipeline fails to load.
     """
+    from .enums import ONNXProvider
+    from .face_embeddings.arcface import ArcFaceEmbedding
     from .inference_pipeline import AUIPAdapterPipeline
 
+    dtype = torch.bfloat16 if device == "cuda" else torch.float32
     pipeline = StableDiffusionPipeline.from_pretrained(
-        params.unet_model, torch_dtype=torch.bfloat16
+        params.unet_model,
+        torch_dtype=dtype,
+        safety_checker=None,
+        feature_extractor=None,
     )
     if pipeline is None:
         raise ValueError("Failed to load pipeline")
@@ -113,11 +122,16 @@ def load_inference_pipeline(
     # in the UNet from load_au_adapter above).
     face_proj = load_ip_adapter_weights(pipeline.unet, ip_adapter_path)
 
-    msc_pipeline = AUIPAdapterPipeline.from_pipeline(
-        pipeline, au_encoder, identity_adapter, face_proj
+    ctx_id = 0 if device == "cuda" else -1
+    arcface_extractor = ArcFaceEmbedding(
+        providers=[ONNXProvider.CUDA, ONNXProvider.CPU], ctx_id=ctx_id
     )
-    msc_pipeline.eval()
-    return msc_pipeline
+
+    auip_pipeline = AUIPAdapterPipeline.from_pipeline(
+        pipeline, au_encoder, identity_adapter, face_proj, arcface_extractor
+    )
+    auip_pipeline.to(device)
+    return auip_pipeline
 
 
 def freeze_model_layers(

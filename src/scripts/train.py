@@ -7,12 +7,12 @@ from accelerate import Accelerator
 from accelerate.utils import set_seed
 from dotenv import load_dotenv
 from loguru import logger
-from omegaconf import DictConfig
 from tqdm import tqdm
 from transformers import CLIPTokenizer
 
 from msc.au_adapter import AUEncoder, IdentityAdapter, save_au_adapter
 from msc.cli import cli
+from msc.config import Args
 from msc.constants import RANDOM_SEED
 from msc.data.dataset import get_dataloaders
 from msc.model_utils import freeze_model_layers, load_model
@@ -26,12 +26,13 @@ from msc.train_utils import (
 
 
 @cli()
-def train(cfg: DictConfig) -> None:
+def train(cfg: Args) -> None:
     """Train AU adapter on BP4D with FaceID IP-Adapter conditioning."""
     load_dotenv()
     set_seed(RANDOM_SEED)
 
     params = cfg.parameters
+    opt_cfg = params.optimizer
     ip_cfg = cfg.ip_adapter
     wandb_cfg = cfg.wandb
 
@@ -45,8 +46,12 @@ def train(cfg: DictConfig) -> None:
         accelerator.init_trackers(
             project_name=wandb_cfg.project,
             config={
-                "learning_rate": params.learning_rate,
-                "batch_size": params.batch_size,
+                "learning_rate": opt_cfg.learning_rate,
+                "weight_decay": opt_cfg.weight_decay,
+                "adam_beta1": opt_cfg.adam_beta1,
+                "adam_beta2": opt_cfg.adam_beta2,
+                "adam_eps": opt_cfg.adam_eps,
+                "batch_size": params.dataloader.batch_size,
                 "epochs": params.epochs,
                 "augmentation_proba": params.augmentation_proba,
                 "early_stopping": params.early_stopping,
@@ -93,10 +98,15 @@ def train(cfg: DictConfig) -> None:
                 if p.requires_grad
             ]
         ),
-        lr=params.learning_rate,
+        lr=opt_cfg.learning_rate,
+        betas=(opt_cfg.adam_beta1, opt_cfg.adam_beta2),
+        eps=opt_cfg.adam_eps,
+        weight_decay=opt_cfg.weight_decay,
     )
 
-    train_loader, val_loader, test_loader = get_dataloaders(params)
+    train_loader, val_loader, test_loader = get_dataloaders(
+        params.dataloader, params.augmentation_proba
+    )
 
     unet, au_encoder, identity_adapter, optimizer, train_loader = accelerator.prepare(
         unet, au_encoder, identity_adapter, optimizer, train_loader

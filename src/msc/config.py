@@ -1,6 +1,6 @@
 """Configuration for the project."""
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 from .enums import LogLevel, ONNXProvider
 
@@ -11,22 +11,45 @@ DEFAULT_ONNX_PROVIDERS = [ONNXProvider.CUDA, ONNXProvider.COREML, ONNXProvider.C
 class DataloaderParams:
     """Configuration for the dataloader."""
 
+    batch_size: int = 32
+    """Number of samples per batch"""
+
     num_workers: int = 2
     """Number of workers for data loading"""
+
+
+@dataclass
+class OptimizerParams:
+    """Configuration for the AdamW optimizer."""
+
+    learning_rate: float = 1e-4
+    """Learning rate"""
+
+    weight_decay: float = 0.01
+    """Weight decay (L2 regularisation)"""
+
+    adam_beta1: float = 0.9
+    """AdamW beta1 (first moment decay)"""
+
+    adam_beta2: float = 0.999
+    """AdamW beta2 (second moment decay)"""
+
+    adam_eps: float = 1e-8
+    """AdamW epsilon for numerical stability"""
 
 
 @dataclass
 class Params:
     """Configuration for the project."""
 
+    optimizer: OptimizerParams
+    """Optimizer configuration"""
+
+    dataloader: DataloaderParams
+    """Dataloader configuration"""
+
     unet_model: str = "stable-diffusion-v1-5/stable-diffusion-v1-5"
     """The UNet model id to use"""
-
-    learning_rate: float = 0.001
-    """Learning rate for optimizer"""
-
-    batch_size: int = 32
-    """Number of samples per batch"""
 
     epochs: int = 10
     """Number of training epochs"""
@@ -52,9 +75,6 @@ class Params:
     max_grad_norm: float = 1.0
     """Maximum gradient norm for clipping."""
 
-    dataloader: DataloaderParams = field(default_factory=DataloaderParams)
-    """Configuration for the dataloader"""
-
 
 @dataclass
 class IPAdapter:
@@ -68,21 +88,7 @@ class IPAdapter:
 
 
 @dataclass
-class IdentityLoss:
-    """Configuration for the identity loss."""
-
-    weight: float = 1.0
-    """Weight for identity loss."""
-
-    ctx_id: int = -1
-    """GPU device index (-1 for CPU)."""
-
-    det_size: tuple[int, int] = (640, 640)
-    """Face detection input resolution."""
-
-
-@dataclass
-class WandB:
+class WandBConfig:
     """Configuration for Weights & Biases logging."""
 
     enabled: bool = True
@@ -102,16 +108,13 @@ class WandB:
 class Args:
     """Top level arguments for the project."""
 
-    identity: IdentityLoss = field(default_factory=IdentityLoss)
-    """Identity loss configuration"""
-
-    parameters: Params = field(default_factory=Params)
+    parameters: Params
     """Project parameters"""
 
-    ip_adapter: IPAdapter = field(default_factory=IPAdapter)
+    ip_adapter: IPAdapter
     """IP-Adapter configuration"""
 
-    wandb: WandB = field(default_factory=WandB)
+    wandb: WandBConfig
     """Weights & Biases configuration"""
 
     log_level: LogLevel = LogLevel.INFO

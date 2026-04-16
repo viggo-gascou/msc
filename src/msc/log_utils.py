@@ -42,7 +42,7 @@ def setup_file_logging(cfg: Args, output_dir: str = "logs") -> Path:
     run_dir.mkdir(parents=True, exist_ok=True)
 
     config_path = run_dir / "config.yaml"
-    OmegaConf.save(cfg, config_path)
+    OmegaConf.save(OmegaConf.structured(cfg), config_path)
 
     log_file = run_dir / "main.log"
     logger.add(log_file, format=LOG_FORMAT_FILE, level="DEBUG", colorize=False)
