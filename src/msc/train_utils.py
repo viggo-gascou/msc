@@ -10,7 +10,13 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 from transformers import CLIPTextModel, CLIPTokenizer
 
-from .au_adapter import AUEncoder, IdentityAdapter, MLPProjModel, SourceConditionedUNet, prefixed
+from .au_adapter import (
+    AUEncoder,
+    IdentityAdapter,
+    MLPProjModel,
+    SourceConditionedUNet,
+    prefixed,
+)
 
 
 def forward_batch(
@@ -72,7 +78,10 @@ def forward_batch(
 
     noise = torch.randn_like(target_latents)
     timesteps = torch.randint(
-        0, scheduler.config.num_train_timesteps, (target_latents.shape[0],), device=device
+        0,
+        scheduler.config.num_train_timesteps,
+        (target_latents.shape[0],),
+        device=device,
     ).long()
     noisy = scheduler.add_noise(
         original_samples=target_latents, noise=noise, timesteps=timesteps
@@ -88,7 +97,10 @@ def forward_batch(
     cond = text_encoder(ids).last_hidden_state
 
     # Set source latents on wrapper — concatenated in forward()
-    unet.set_source(source_latents)
+    if isinstance(unet, torch.nn.parallel.DistributedDataParallel):
+        unet.module.set_source(source_latents)
+    else:
+        unet.set_source(source_latents)
 
     pred = unet(
         sample=noisy,
