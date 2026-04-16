@@ -17,16 +17,39 @@ from transformers import CLIPTextModel, CLIPTokenizer
 
 from .au_adapter import (
     MLPProjModel,
+    SourceConditionedUNet,
     load_au_adapter,
     load_ip_adapter_weights,
     setup_unet_processors,
 )
 
 
+def expand_unet_in_channels(unet: UNet2DConditionModel) -> None:
+    """Expand UNet conv_in from 4 to 8 input channels for source conditioning.
+
+    The first 4 channels keep pretrained weights (noisy target latents).
+    The last 4 channels are zero-initialised (clean source latents), so the
+    model starts from the pretrained checkpoint and gradually learns to use
+    the source conditioning signal.
+
+    Args:
+        unet: UNet2DConditionModel to modify in-place.
+    """
+    old = unet.conv_in
+    new_conv = nn.Conv2d(
+        8, old.out_channels, kernel_size=old.kernel_size, padding=old.padding
+    )
+    new_conv.weight.zero_()
+    new_conv.weight[:, :4].copy_(old.weight)
+    new_conv.bias.copy_(old.bias)
+    unet.conv_in = new_conv
+    unet.config["in_channels"] = 8
+
+
 def load_model(
     params: DictConfig, ip_cfg: DictConfig
 ) -> tuple[
-    UNet2DConditionModel,
+    SourceConditionedUNet,
     AutoencoderKL,
     CLIPTextModel,
     CLIPTokenizer,
@@ -54,6 +77,10 @@ def load_model(
         raise ValueError("Failed to load pipeline")
 
     unet: UNet2DConditionModel = pipeline.unet
+
+    # Expand conv_in to 8 channels for source image conditioning
+    expand_unet_in_channels(unet)
+
     vae: AutoencoderKL = pipeline.vae
     text_encoder: CLIPTextModel = pipeline.text_encoder
     tokenizer: CLIPTokenizer = pipeline.tokenizer
@@ -68,7 +95,9 @@ def load_model(
     ip_adapter_path = hf_hub_download(repo_id=ip_cfg.repo, filename=ip_cfg.weight_id)
     face_proj = load_ip_adapter_weights(unet, ip_adapter_path)
 
-    return unet, vae, text_encoder, tokenizer, scheduler, au_procs, face_proj
+    wrapped_unet = SourceConditionedUNet(unet)
+
+    return wrapped_unet, vae, text_encoder, tokenizer, scheduler, au_procs, face_proj
 
 
 def load_inference_pipeline(
@@ -113,6 +142,9 @@ def load_inference_pipeline(
 
     ip_adapter_path = hf_hub_download(repo_id=ip_cfg.repo, filename=ip_cfg.weight_id)
 
+    # Expand conv_in to 8 channels for source image conditioning
+    expand_unet_in_channels(pipeline.unet)
+
     # load_au_adapter sets up processors, loads IP-Adapter weights, and restores
     # AU adapter weights — but doesn't return face_proj.
     au_encoder, identity_adapter, _ = load_au_adapter(
@@ -121,6 +153,9 @@ def load_inference_pipeline(
     # Load face_proj from the IP-Adapter checkpoint (idempotent, weights already
     # in the UNet from load_au_adapter above).
     face_proj = load_ip_adapter_weights(pipeline.unet, ip_adapter_path)
+
+    # Wrap UNet for source latent concatenation
+    pipeline.unet = SourceConditionedUNet(pipeline.unet)
 
     ctx_id = 0 if device == "cuda" else -1
     arcface_extractor = ArcFaceEmbedding(
@@ -167,5 +202,9 @@ def freeze_model_layers(
         for name, p in proc.named_parameters():
             if "to_k_au" in name or "to_v_au" in name:
                 p.requires_grad = True
+
+    # Unfreeze conv_in so it can learn to process 8-channel input
+    for p in unet.conv_in.parameters():
+        p.requires_grad = True
 
     return unet, vae, text_encoder, au_procs

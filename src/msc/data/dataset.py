@@ -1,5 +1,6 @@
 """PyTorch Dataset for BP4D face sequences."""
 
+from collections import defaultdict
 from pathlib import Path
 from typing import Callable, NotRequired, TypedDict
 
@@ -112,9 +113,9 @@ class BP4DSample(TypedDict):
     # AU occurrence labels, shape (len(BP4D_AU_COLUMNS),), float32, NaN for missing
     aus: torch.Tensor
 
-    # Target frame from the same subject/task — ground truth expression to generate
+    # Target frame from the same subject/task — the expression to generate
     target_image: TVImage
-    # AU labels for the target frame — conditioning signal for the diffusion model
+    # AU labels for the target frame — conditioning signal for the AU encoder
     target_aus: torch.Tensor
 
     # Aligned 112x112 face crop in [-1, 1], shape (3, 112, 112) — optional,
@@ -203,11 +204,10 @@ class BP4DDataset(VisionDataset):
 
         self.index = index.reset_index(drop=True)
 
-        # {(subject, task): [row indices]} for fast target frame sampling
-        self.seq_index: dict[tuple[str, str], list[int]] = {}
+        # {(subject, task): [row indices]} for target frame sampling
+        self.seq_index: defaultdict[tuple[str, str], list[int]] = defaultdict(list)
         for i, row in enumerate(self.index.itertuples(index=False)):
-            key = (row.subject, row.task)
-            self.seq_index.setdefault(key, []).append(i)
+            self.seq_index[(row.subject, row.task)].append(i)
 
         # HDF5 handles — opened lazily in _open_h5 to support multiprocessing
         self.preprocessed: dict[str, h5py.File] = {}
@@ -250,9 +250,6 @@ class BP4DDataset(VisionDataset):
         if self.transform is not None:
             image = self.transform(image)
 
-        if self.target_transform is not None:
-            aus = self.target_transform(aus)
-
         # Sample a target frame from the same subject/task
         candidates = self.seq_index[(subject, task)]
         target_idx = candidates[int(torch.randint(len(candidates), (1,)).item())]
@@ -265,8 +262,6 @@ class BP4DDataset(VisionDataset):
             [target_row.get(col, float("nan")) for col in BP4D_AU_COLUMNS],
             dtype=torch.float32,
         )
-        if self.target_transform is not None:
-            target_aus = self.target_transform(target_aus)
 
         face = (
             torch.from_numpy(pre_f[subject]["faces"][pos]) if self.load_face else None

@@ -10,12 +10,12 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 from transformers import CLIPTextModel, CLIPTokenizer
 
-from .au_adapter import AUEncoder, IdentityAdapter, MLPProjModel, prefixed
+from .au_adapter import AUEncoder, IdentityAdapter, MLPProjModel, SourceConditionedUNet, prefixed
 
 
 def forward_batch(
     batch: dict,
-    unet: UNet2DConditionModel,
+    unet: SourceConditionedUNet,
     vae: AutoencoderKL,
     text_encoder: CLIPTextModel,
     tokenizer: CLIPTokenizer,
@@ -27,9 +27,13 @@ def forward_batch(
 ) -> torch.Tensor:
     """Shared forward pass for train, val, and test.
 
+    InstructPix2Pix-style: the source image is encoded to latents and
+    concatenated with noisy target latents (8-channel UNet input). The model
+    learns to edit the source face towards the target expression.
+
     Args:
         batch: BP4DSample batch from the dataloader.
-        unet: UNet2DConditionModel with AUIPAttnProcessors.
+        unet: SourceConditionedUNet wrapping the 8-channel UNet.
         vae: VAE encoder/decoder.
         text_encoder: CLIP text encoder.
         tokenizer: CLIP tokenizer.
@@ -44,27 +48,38 @@ def forward_batch(
     """
     vae_dtype = next(vae.parameters()).dtype
     proj_dtype = next(face_proj.parameters()).dtype
-    pixel_values = batch["target_image"].to(device=device, dtype=vae_dtype)
+
+    # Source frame — visual context for editing + identity
+    source_pixels = batch["image"].to(device=device, dtype=vae_dtype)
     arcface_embeds = batch["arcface"].to(device=device, dtype=proj_dtype)
+
+    # Target frame — reconstruction target + AU conditioning
+    target_pixels = batch["target_image"].to(device=device, dtype=vae_dtype)
     au_values = batch["target_aus"].to(device)
 
+    # Encode conditioning tokens
     au_tokens = au_encoder(au_values)
     au_tokens = identity_adapter(au_tokens, arcface_embeds)
     id_tokens = face_proj(arcface_embeds)
 
-    latents = vae.encode(pixel_values).latent_dist.sample()
-    latents = latents * vae.config.scaling_factor
+    # Encode source image (clean latents — concatenated with noisy target)
+    source_latents = vae.encode(source_pixels).latent_dist.sample()
+    source_latents = source_latents * vae.config.scaling_factor
 
-    noise = torch.randn_like(latents)
+    # Encode target image (noised — prediction target)
+    target_latents = vae.encode(target_pixels).latent_dist.sample()
+    target_latents = target_latents * vae.config.scaling_factor
+
+    noise = torch.randn_like(target_latents)
     timesteps = torch.randint(
-        0, scheduler.config.num_train_timesteps, (latents.shape[0],), device=device
+        0, scheduler.config.num_train_timesteps, (target_latents.shape[0],), device=device
     ).long()
     noisy = scheduler.add_noise(
-        original_samples=latents, noise=noise, timesteps=timesteps
+        original_samples=target_latents, noise=noise, timesteps=timesteps
     )
 
     ids = tokenizer(
-        [""] * latents.shape[0],
+        [""] * target_latents.shape[0],
         padding="max_length",
         max_length=tokenizer.model_max_length,
         truncation=True,
@@ -72,7 +87,10 @@ def forward_batch(
     ).input_ids.to(device)
     cond = text_encoder(ids).last_hidden_state
 
-    pred = unet(  # type: ignore[not-callable]
+    # Set source latents on wrapper — concatenated in forward()
+    unet.set_source(source_latents)
+
+    pred = unet(
         sample=noisy,
         timestep=timesteps,
         encoder_hidden_states=cond,

@@ -1,9 +1,14 @@
-"""MSCPipeline: Stable Diffusion with AU expression + FaceID identity conditioning."""
+"""AUIPAdapterPipeline: InstructPix2Pix-style AU editing pipeline.
+
+Given a source face image and target AU intensities, generates the same
+person with the target expression applied.
+"""
 
 from __future__ import annotations
 
 import numpy as np
 import torch
+from diffusers.image_processor import VaeImageProcessor
 from diffusers.pipelines.stable_diffusion.pipeline_stable_diffusion import (
     StableDiffusionPipeline,
     StableDiffusionPipelineOutput,
@@ -19,22 +24,14 @@ from .torch_utils import tensor_to_bgr
 class AUIPAdapterPipeline(StableDiffusionPipeline):
     """StableDiffusionPipeline extended with AU expression and FaceID conditioning.
 
+    Operates in an InstructPix2Pix-style editing mode: the source image is
+    encoded to latents and concatenated with noisy latents at each denoising
+    step (8-channel UNet input). The model edits the source face towards the
+    target expression specified by AU values.
+
     Use `from_pipeline` to construct an instance from an existing
-    `StableDiffusionPipeline` that already has `AUIPAttnProcessor` s
-    installed in its UNet.
-
-    At inference the pipeline:
-
-    1. Extracts an ArcFace embedding from the input image (or uses a
-       pre-extracted embedding if provided directly).
-    2. Encodes AU values via `encode_aus` — produces uncond‖cond tokens
-       for classifier-free guidance.
-    3. Personalises the conditional AU tokens with `IdentityAdapter` so the
-       expression encoding is subject-specific.
-    4. Projects the ArcFace embedding to IP-Adapter face tokens via
-       `encode_image`.
-    5. Delegates the full denoising loop to the parent `StableDiffusionPipeline`
-       via `cross_attention_kwargs`.
+    `StableDiffusionPipeline` whose UNet has already been expanded to 8
+    channels and wrapped in a `SourceConditionedUNet`.
     """
 
     @classmethod
@@ -51,7 +48,8 @@ class AUIPAdapterPipeline(StableDiffusionPipeline):
         Args:
             pipeline:
                 Base `StableDiffusionPipeline` with `AUIPAttnProcessor` s
-                already installed in its UNet (via `setup_unet_processors`).
+                installed in its UNet, conv_in expanded to 8 channels, and
+                UNet wrapped in `SourceConditionedUNet`.
             au_encoder: Trained AUEncoder.
             identity_adapter: Trained IdentityAdapter.
             face_proj: Pretrained face projector loaded from IP-Adapter checkpoint.
@@ -122,6 +120,28 @@ class AUIPAdapterPipeline(StableDiffusionPipeline):
         cond_au = self.identity_adapter(cond_au, arcface_embeds)
         return torch.cat([uncond_au, cond_au], dim=0)
 
+    def encode_source(
+        self, image: Image.Image, do_cfg: bool = True
+    ) -> torch.Tensor:
+        """Encode source image to VAE latents for the 8-channel UNet input.
+
+        Args:
+            image: Source PIL image to edit.
+            do_cfg: Whether to tile for classifier-free guidance (2B).
+
+        Returns:
+            Source latents of shape (B, 4, H/8, W/8) or (2B, 4, H/8, W/8).
+        """
+        processor = VaeImageProcessor(vae_scale_factor=self.vae_scale_factor)
+        pixel_values = processor.preprocess(image).to(
+            device=self._execution_device, dtype=self.vae.dtype
+        )
+        source_latents = self.vae.encode(pixel_values).latent_dist.sample()
+        source_latents = source_latents * self.vae.config.scaling_factor
+        if do_cfg:
+            source_latents = torch.cat([source_latents, source_latents], dim=0)
+        return source_latents
+
     @torch.no_grad()
     def __call__(
         self,
@@ -138,22 +158,23 @@ class AUIPAdapterPipeline(StableDiffusionPipeline):
         id_scale: float = 0.6,
         **kwargs,
     ) -> StableDiffusionPipelineOutput:
-        """Generate images conditioned on AU values and a FaceID embedding.
+        """Edit a source face image to apply target AU values.
 
-        Either ``image`` or ``arcface_embeds`` must be provided. If ``image``
-        is given, the ArcFace embedding is extracted on the fly using the
-        extractor passed to ``from_pipeline``.
+        The source ``image`` is required — it provides both the visual context
+        (encoded to latents for the 8-channel UNet input) and the identity
+        (via ArcFace extraction or pre-extracted ``arcface_embeds``).
 
         Args:
             prompt: Text prompt(s).
-            aus: AU intensity tensor of shape (B, 23).
+            aus:
+                Target AU intensities as a tensor of shape (B, 23), or a dict
+                mapping AU names to values (e.g. ``{"AU12": 1.0}``).
             image:
-                Input face image to extract identity from. Accepts a BGR uint8
-                numpy array, an RGB float tensor of shape (C, H, W), or a PIL
-                Image. Mutually exclusive with ``arcface_embeds``.
+                Source face image to edit. Accepts a BGR uint8 numpy array, an
+                RGB float tensor of shape (C, H, W), or a PIL Image.
             arcface_embeds:
-                Pre-extracted ArcFace embedding of shape (B, 512). Takes
-                precedence over ``image`` if both are supplied.
+                Pre-extracted ArcFace embedding of shape (B, 512). If provided,
+                skips ArcFace extraction from ``image``.
             height: Output image height in pixels.
             width: Output image width in pixels.
             num_inference_steps: Number of denoising steps.
@@ -167,31 +188,46 @@ class AUIPAdapterPipeline(StableDiffusionPipeline):
             `StableDiffusionPipelineOutput` containing generated images.
 
         Raises:
-            ValueError: If neither ``image`` nor ``arcface_embeds`` is provided,
-                or if ``image`` is provided but no extractor was set.
+            ValueError: If ``image`` is not provided, or if ``arcface_embeds``
+                is not provided and no extractor was set.
         """
-        device = self._execution_device
+        if image is None:
+            raise ValueError("`image` is required — it provides the source face to edit.")
 
+        device = self._execution_device
+        do_cfg = guidance_scale > 1.0
+
+        # Convert to PIL for both arcface extraction and VAE encoding
+        if isinstance(image, torch.Tensor):
+            pil_image = Image.fromarray(tensor_to_bgr(image)[:, :, ::-1])  # BGR→RGB
+        elif isinstance(image, np.ndarray):
+            pil_image = Image.fromarray(image[:, :, ::-1])  # BGR→RGB
+        elif isinstance(image, Image.Image):
+            pil_image = image
+        else:
+            raise TypeError(f"Unsupported image type: {type(image)}")
+
+        # Extract arcface embedding if not provided
         if arcface_embeds is None:
-            if image is None:
-                raise ValueError("Either `image` or `arcface_embeds` must be provided.")
             if self.arcface_extractor is None:
                 raise ValueError(
                     "No arcface_extractor set. Pass one to `from_pipeline` or "
                     "provide `arcface_embeds` directly."
                 )
-            if isinstance(image, Image.Image):
-                image = np.array(image.convert("RGB"))[:, :, ::-1]  # RGB→BGR
-            elif isinstance(image, torch.Tensor):
-                image = tensor_to_bgr(image)
-            arcface_embeds = self.arcface_extractor.embed(image).unsqueeze(0).to(device)
+            bgr = np.array(pil_image.convert("RGB"))[:, :, ::-1]
+            arcface_embeds = (
+                self.arcface_extractor.embed(bgr).unsqueeze(0).to(device)
+            )
         else:
             arcface_embeds = arcface_embeds.to(device)
 
-        do_cfg = guidance_scale > 1.0
-
+        # Encode conditioning
         au_tokens = self.encode_aus(aus, arcface_embeds)
         id_tokens = self.encode_identity(arcface_embeds, do_cfg=do_cfg)
+
+        # Encode source image and set on UNet wrapper
+        source_latents = self.encode_source(pil_image, do_cfg=do_cfg)
+        self.unet.set_source(source_latents)
 
         return super().__call__(
             prompt=prompt,

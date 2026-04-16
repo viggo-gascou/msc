@@ -18,6 +18,46 @@ from .constants import BP4D_AU_COLUMNS
 NUM_AUS: int = len(BP4D_AU_COLUMNS)  # 23
 
 
+class SourceConditionedUNet(nn.Module):
+    """Wrapper that concatenates source image latents with noisy latents.
+
+    Used for InstructPix2Pix-style editing: the UNet sees 8 input channels
+    (4 noisy target + 4 clean source) and learns to edit the source image
+    towards the target expression.
+
+    Set ``source_latents`` via :meth:`set_source` before the denoising loop.
+    """
+
+    def __init__(self, unet: UNet2DConditionModel) -> None:
+        super().__init__()
+        self.unet = unet
+        self.source_latents: torch.Tensor | None = None
+
+    def set_source(self, source_latents: torch.Tensor) -> None:
+        """Store source image latents to concatenate at each denoising step.
+
+        Args:
+            source_latents: Clean latents of shape (B, 4, H, W) or
+                (2B, 4, H, W) if tiled for CFG.
+        """
+        self.source_latents = source_latents
+
+    def forward(
+        self, sample: torch.Tensor, *args: t.Any, **kwargs: t.Any
+    ) -> t.Any:
+        """Concatenate source latents and forward through the real UNet."""
+        if self.source_latents is not None:
+            sample = torch.cat([sample, self.source_latents], dim=1)
+        return self.unet(sample, *args, **kwargs)
+
+    def __getattr__(self, name: str) -> t.Any:
+        """Delegate attribute access to the wrapped UNet."""
+        try:
+            return super().__getattr__(name)
+        except AttributeError:
+            return getattr(self.unet, name)
+
+
 class AUEncoder(nn.Module):
     """Encode AU intensity values to cross-attention conditioning tokens.
 
@@ -514,6 +554,7 @@ def save_au_adapter(
     identity_adapter: IdentityAdapter,
     au_procs: nn.ModuleDict,
     path: str,
+    conv_in: nn.Conv2d | None = None,
 ) -> None:
     """Serialise all trainable AU adapter weights to a safetensors file.
 
@@ -525,6 +566,7 @@ def save_au_adapter(
         identity_adapter: Trained IdentityAdapter.
         au_procs: Trained AUIPAttnProcessors (as ModuleDict).
         path: Destination path for the safetensors file.
+        conv_in: Optional 8-channel conv_in layer to save.
     """
     procs_sd = {
         k: v
@@ -535,6 +577,8 @@ def save_au_adapter(
     flat.update(prefixed(au_encoder.state_dict(), "au_encoder"))
     flat.update(prefixed(identity_adapter.state_dict(), "identity_adapter"))
     flat.update(prefixed(procs_sd, "au_procs"))
+    if conv_in is not None:
+        flat.update(prefixed(conv_in.state_dict(), "conv_in"))
     save_file(tensors=flat, filename=path)
 
 
@@ -569,5 +613,10 @@ def load_au_adapter(
     au_procs = setup_unet_processors(unet)
     load_ip_adapter_weights(unet, ip_adapter_path)
     au_procs.load_state_dict(_strip(flat, "au_procs"), strict=False)
+
+    # Restore 8-channel conv_in weights if present in checkpoint
+    conv_in_sd = _strip(flat, "conv_in")
+    if conv_in_sd:
+        unet.conv_in.load_state_dict(conv_in_sd)
 
     return au_encoder, identity_adapter, au_procs

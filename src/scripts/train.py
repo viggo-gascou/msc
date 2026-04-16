@@ -87,17 +87,20 @@ def train(cfg: Args) -> None:
     au_encoder = AUEncoder()
     identity_adapter = IdentityAdapter()
 
+    # Collect all trainable params: AU adapter components + conv_in (8-channel)
+    trainable_params = (
+        list(au_encoder.parameters())
+        + list(identity_adapter.parameters())
+        + [
+            p
+            for proc in au_procs.values()
+            for p in proc.parameters()
+            if p.requires_grad
+        ]
+        + [p for p in unet.conv_in.parameters() if p.requires_grad]
+    )
     optimizer = torch.optim.AdamW(
-        params=(
-            list(au_encoder.parameters())
-            + list(identity_adapter.parameters())
-            + [
-                p
-                for proc in au_procs.values()
-                for p in proc.parameters()
-                if p.requires_grad
-            ]
-        ),
+        params=trainable_params,
         lr=opt_cfg.learning_rate,
         betas=(opt_cfg.adam_beta1, opt_cfg.adam_beta2),
         eps=opt_cfg.adam_eps,
@@ -173,6 +176,7 @@ def train(cfg: Args) -> None:
                     identity_adapter,
                     au_procs,
                     "best_au_adapter.safetensors",
+                    conv_in=unet.conv_in,
                 )
                 logger.info(f"Saved best model (val loss {best_val_loss:.4f})")
         else:
