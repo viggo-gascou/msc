@@ -6,11 +6,13 @@ import torch.nn.functional as F
 from accelerate import Accelerator
 from diffusers import AutoencoderKL, UNet2DConditionModel
 from diffusers.schedulers import DDIMScheduler, LMSDiscreteScheduler, PNDMScheduler
+from diffusers.training_utils import compute_snr
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 from transformers import CLIPTextModel, CLIPTokenizer
 
 from .au_adapter import AUEncoder, IdentityAdapter, MLPProjModel, prefixed
+from .config import Params
 
 
 def forward_batch(
@@ -24,6 +26,7 @@ def forward_batch(
     identity_adapter: IdentityAdapter,
     face_proj: MLPProjModel,
     device: torch.device,
+    params: Params,
 ) -> torch.Tensor:
     """Shared forward pass for train, val, and test.
 
@@ -38,33 +41,41 @@ def forward_batch(
         identity_adapter: Identity-conditioned AU token adapter.
         face_proj: Pretrained MLP projecting ArcFace → IP-Adapter face tokens.
         device: Target device.
+        params: Training parameters.
 
     Returns:
         Scalar MSE loss between predicted and actual noise.
     """
     vae_dtype = next(vae.parameters()).dtype
     proj_dtype = next(face_proj.parameters()).dtype
-    pixel_values = batch["target_image"].to(device=device, dtype=vae_dtype)
+    tgt_pixels = batch["target_image"].to(device=device, dtype=vae_dtype)
     arcface_embeds = batch["arcface"].to(device=device, dtype=proj_dtype)
     au_values = batch["target_aus"].to(device)
+
+    # Per-sample CFG dropout: zero out AU values with probability cfg_dropout_prob
+    # so the model learns both conditional and unconditional distributions.
+    if params.cfg_dropout_prob > 0:
+        keep = torch.rand(au_values.shape[0], device=device) >= params.cfg_dropout_prob
+        au_values = au_values * keep.float().unsqueeze(1)
 
     au_tokens = au_encoder(au_values)
     au_tokens = identity_adapter(au_tokens, arcface_embeds)
     id_tokens = face_proj(arcface_embeds)
 
-    latents = vae.encode(pixel_values).latent_dist.sample()
-    latents = latents * vae.config.scaling_factor
+    tgt_latents = (
+        vae.encode(tgt_pixels).latent_dist.sample() * vae.config.scaling_factor
+    )
 
-    noise = torch.randn_like(latents)
+    noise = torch.randn_like(tgt_latents)
     timesteps = torch.randint(
-        0, scheduler.config.num_train_timesteps, (latents.shape[0],), device=device
+        0, scheduler.config.num_train_timesteps, (tgt_latents.shape[0],), device=device
     ).long()
-    noisy = scheduler.add_noise(
-        original_samples=latents, noise=noise, timesteps=timesteps
+    noisy_tgt = scheduler.add_noise(
+        original_samples=tgt_latents, noise=noise, timesteps=timesteps
     )
 
     ids = tokenizer(
-        [""] * latents.shape[0],
+        [""] * tgt_latents.shape[0],
         padding="max_length",
         max_length=tokenizer.model_max_length,
         truncation=True,
@@ -72,8 +83,8 @@ def forward_batch(
     ).input_ids.to(device)
     cond = text_encoder(ids).last_hidden_state
 
-    pred = unet(  # type: ignore[not-callable]
-        sample=noisy,
+    pred_eps = unet(  # type: ignore[not-callable]
+        sample=noisy_tgt,
         timestep=timesteps,
         encoder_hidden_states=cond,
         cross_attention_kwargs={
@@ -83,7 +94,47 @@ def forward_batch(
             "au_scale": 1.0,
         },
     ).sample
-    return F.mse_loss(input=pred, target=noise)
+
+    if params.snr_gamma < 0:
+        snr_weights = None
+        eps_loss = F.mse_loss(pred_eps.float(), noise.float())
+    else:
+        # Compute loss-weights as per Section 3.4 of https://arxiv.org/abs/2303.09556.
+        # Since we predict the noise instead of x_0, the original formulation is
+        # slightly changed.
+        # This is discussed in Section 4.2 of the same paper.
+        snr = compute_snr(scheduler, timesteps)
+        snr_weights = torch.stack(
+            [snr, params.snr_gamma * torch.ones_like(timesteps)], dim=1
+        ).min(dim=1)[0]
+
+        # we are either predicting the noise, epsilon (used in SD 1.5), or
+        # "velocity" (used in SD 2.0)
+        if scheduler.config.prediction_type == "epsilon":
+            snr_weights = snr_weights / snr
+        elif scheduler.config.prediction_type == "v_prediction":
+            snr_weights = snr_weights / (snr + 1)
+
+        eps_loss = (
+            F.mse_loss(pred_eps.float(), noise.float(), reduction="none").mean(
+                dim=list(range(1, pred_eps.ndim))
+            )
+            * snr_weights
+        ).mean()
+
+    if params.x0_loss_weight > 0:
+        alpha_t = scheduler.alphas_cumprod[timesteps].to(pred_eps).view(-1, 1, 1, 1)
+        pred_x0 = (noisy_tgt - (1 - alpha_t).sqrt() * pred_eps) / alpha_t.sqrt()
+        x0_loss_raw = F.mse_loss(pred_x0.float(), tgt_latents.float(), reduction="none")
+        if snr_weights is not None:
+            x0_loss = (
+                x0_loss_raw.mean(dim=list(range(1, pred_x0.ndim))) * snr_weights
+            ).mean()
+        else:
+            x0_loss = x0_loss_raw.mean()
+        return eps_loss + params.x0_loss_weight * x0_loss
+
+    return eps_loss
 
 
 def train_one_epoch(
@@ -99,7 +150,7 @@ def train_one_epoch(
     loader: DataLoader,
     accelerator: Accelerator,
     device: torch.device,
-    max_grad_norm: float = 1.0,
+    params: Params,
 ) -> float:
     """Train all trainable components for one epoch.
 
@@ -116,7 +167,7 @@ def train_one_epoch(
         loader: Training dataloader.
         accelerator: Accelerate wrapper.
         device: Target device.
-        max_grad_norm: Maximum gradient norm for clipping.
+        params: Training parameters.
 
     Returns:
         Average training loss for the epoch.
@@ -140,10 +191,11 @@ def train_one_epoch(
                 identity_adapter,
                 face_proj,
                 device,
+                params,
             )
             accelerator.backward(loss)
             if accelerator.sync_gradients:
-                accelerator.clip_grad_norm_(trainable_params, max_grad_norm)
+                accelerator.clip_grad_norm_(trainable_params, params.max_grad_norm)
             optimizer.step()
             optimizer.zero_grad()
 
@@ -167,6 +219,7 @@ def validate(
     loader: DataLoader,
     accelerator: Accelerator,
     device: torch.device,
+    params: Params,
 ) -> float:
     """Evaluate loss on the validation set.
 
@@ -181,7 +234,8 @@ def validate(
         face_proj: Face projector.
         loader: Validation dataloader.
         accelerator: Accelerator.
-        device: Target device.
+        device: Target device
+        params: Training parameters.
 
     Returns:
         Average validation loss.
@@ -204,6 +258,7 @@ def validate(
                 identity_adapter,
                 face_proj,
                 device,
+                params,
             )
             epoch_loss += loss.item()
             accelerator.log({"val/batch_loss": loss.item()})
@@ -223,6 +278,7 @@ def evaluate(
     loader: DataLoader,
     accelerator: Accelerator,
     device: torch.device,
+    params: Params,
 ) -> float:
     """Evaluate loss on the test set.
 
@@ -238,6 +294,7 @@ def evaluate(
         loader: Test dataloader.
         accelerator: Accelerator.
         device: Target device.
+        params: Training parameters.
 
     Returns:
         Average test loss.
@@ -260,6 +317,7 @@ def evaluate(
                 identity_adapter,
                 face_proj,
                 device,
+                params,
             )
             epoch_loss += loss.item()
             accelerator.log({"test/batch_loss": loss.item()})

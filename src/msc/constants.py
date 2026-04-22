@@ -16,13 +16,13 @@ LOG_DIR.mkdir(exist_ok=True, parents=True)
 MODEL_DIR.mkdir(exist_ok=True, parents=True)
 
 # BP4D data constants
-BP4D_SEQUENCES_DIR = Path.home() / "projects/semedit/data/BP4D/Sequences"
-BP4D_CODING_DIR = Path.home() / "projects/semedit/data/BP4D/AUCoding"
-BP4D_DATA_DIR = DATA_DIR / "BP4D"
+BP4D_SEQUENCES_DIR = DATA_DIR / "BP4D" / "Sample" / "Sequences"
+BP4D_CODING_DIR = DATA_DIR / "BP4D" / "Sample" / "AUCoding"
+BP4D_DATA_DIR = DATA_DIR / "BP4D" / "Sample"
 BP4D_INDEX_PATH = BP4D_DATA_DIR / "bp4d_index.parquet"
-BP4D_TRAIN_INDEX_PATH = BP4D_DATA_DIR / "bp4d_train_index.parquet"
-BP4D_TEST_INDEX_PATH = BP4D_DATA_DIR / "bp4d_test_index.parquet"
-BP4D_VAL_INDEX_PATH = BP4D_DATA_DIR / "bp4d_val_index.parquet"
+BP4D_TRAIN_INDEX_PATH = BP4D_DATA_DIR / "bp4d_index.parquet"
+BP4D_TEST_INDEX_PATH = BP4D_DATA_DIR / "bp4d_index.parquet"
+BP4D_VAL_INDEX_PATH = BP4D_DATA_DIR / "bp4d_index.parquet"
 
 BP4D_PREPROCESSED_DIR = BP4D_DATA_DIR / "Preprocessed"
 BP4D_EMBEDDINGS_DIR = BP4D_DATA_DIR / "Embeddings"
@@ -31,7 +31,7 @@ BP4D_DATA_DIR.mkdir(exist_ok=True, parents=True)
 BP4D_PREPROCESSED_DIR.mkdir(exist_ok=True, parents=True)
 BP4D_EMBEDDINGS_DIR.mkdir(exist_ok=True, parents=True)
 
-# AU columns coded in BP4D (occurrence), zero-padded to match FACS convention
+# AU columns coded in BP4D, zero-padded to match FACS convention
 BP4D_AU_COLUMNS = [
     "AU01",
     "AU02",

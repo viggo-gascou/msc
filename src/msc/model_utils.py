@@ -11,7 +11,6 @@ from diffusers import StableDiffusionPipeline
 from diffusers.models import AutoencoderKL, UNet2DConditionModel
 from diffusers.schedulers import DDIMScheduler, LMSDiscreteScheduler, PNDMScheduler
 from huggingface_hub import hf_hub_download
-from omegaconf import DictConfig
 from torch import nn
 from transformers import CLIPTextModel, CLIPTokenizer
 
@@ -21,10 +20,11 @@ from .au_adapter import (
     load_ip_adapter_weights,
     setup_unet_processors,
 )
+from .config import IPAdapterConfig, Params
 
 
 def load_model(
-    params: DictConfig, ip_cfg: DictConfig
+    params: Params, ip_cfg: IPAdapterConfig
 ) -> tuple[
     UNet2DConditionModel,
     AutoencoderKL,
@@ -53,6 +53,9 @@ def load_model(
     if pipeline is None:
         raise ValueError("Failed to load pipeline")
 
+    if params.vae_model is not None:
+        pipeline.vae = AutoencoderKL.from_pretrained(params.vae_model)
+
     unet: UNet2DConditionModel = pipeline.unet
     vae: AutoencoderKL = pipeline.vae
     text_encoder: CLIPTextModel = pipeline.text_encoder
@@ -72,7 +75,7 @@ def load_model(
 
 
 def load_inference_pipeline(
-    params: DictConfig, ip_cfg: DictConfig, au_ckpt_path: str, device: str = "cuda"
+    params: Params, ip_cfg: IPAdapterConfig, au_ckpt_path: str, device: str = "cuda"
 ) -> "AUIPAdapterPipeline":
     """Load a trained AUIPAdapterPipeline ready for inference.
 
@@ -110,6 +113,13 @@ def load_inference_pipeline(
     )
     if pipeline is None:
         raise ValueError("Failed to load pipeline")
+
+    if params.vae_model is not None:
+        pipeline.vae = AutoencoderKL.from_pretrained(
+            params.vae_model, torch_dtype=dtype
+        )
+
+    pipeline.scheduler = DDIMScheduler.from_config(pipeline.scheduler.config)
 
     ip_adapter_path = hf_hub_download(repo_id=ip_cfg.repo, filename=ip_cfg.weight_id)
 

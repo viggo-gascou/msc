@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 import torch
+from diffusers.image_processor import VaeImageProcessor
 from diffusers.pipelines.stable_diffusion.pipeline_stable_diffusion import (
     StableDiffusionPipeline,
     StableDiffusionPipelineOutput,
@@ -93,9 +94,7 @@ class AUIPAdapterPipeline(StableDiffusionPipeline):
         return id_tokens
 
     def encode_aus(
-        self,
-        aus: torch.Tensor | dict[str, float],
-        arcface_embeds: torch.Tensor,
+        self, aus: torch.Tensor | dict[str, float], arcface_embeds: torch.Tensor
     ) -> torch.Tensor:
         """Encode AU values for classifier-free guidance.
 
@@ -122,6 +121,22 @@ class AUIPAdapterPipeline(StableDiffusionPipeline):
         cond_au = self.identity_adapter(cond_au, arcface_embeds)
         return torch.cat([uncond_au, cond_au], dim=0)
 
+    def encode_source(self, image: Image.Image) -> torch.Tensor:
+        """VAE-encode a PIL image to scaled latents (B, 4, H/8, W/8).
+
+        Args:
+            image: PIL image to encode.
+
+        Returns:
+            Scaled latents of shape (B, 4, H/8, W/8).
+        """
+        processor = VaeImageProcessor(vae_scale_factor=self.vae_scale_factor)
+        pixel_values = processor.preprocess(image).to(
+            device=self._execution_device, dtype=self.vae.dtype
+        )
+        latents = self.vae.encode(pixel_values).latent_dist.sample()
+        return latents * self.vae.config.scaling_factor
+
     @torch.no_grad()
     def __call__(
         self,
@@ -133,6 +148,7 @@ class AUIPAdapterPipeline(StableDiffusionPipeline):
         width: int = 512,
         num_inference_steps: int = 50,
         guidance_scale: float = 7.5,
+        strength: float = 0.5,
         negative_prompt: str | list[str] | None = None,
         au_scale: float = 1.0,
         id_scale: float = 0.6,
@@ -158,6 +174,9 @@ class AUIPAdapterPipeline(StableDiffusionPipeline):
             width: Output image width in pixels.
             num_inference_steps: Number of denoising steps.
             guidance_scale: CFG scale applied to text conditioning.
+            strength: Img2img strength — how much to noise the source image before
+                denoising. 0.0 = no change, 1.0 = pure generation from noise. For AU
+                editing, 0.4–0.6 is recommended.
             negative_prompt: Optional negative prompt(s).
             au_scale: Expression conditioning strength.
             id_scale: Identity conditioning strength.
@@ -181,17 +200,49 @@ class AUIPAdapterPipeline(StableDiffusionPipeline):
                     "provide `arcface_embeds` directly."
                 )
             if isinstance(image, Image.Image):
-                image = np.array(image.convert("RGB"))[:, :, ::-1]  # RGB→BGR
+                pil_image = image
+                image = np.array(image.convert("RGB"))[:, :, ::-1]  # RGB -> BGR
             elif isinstance(image, torch.Tensor):
+                pil_image = Image.fromarray(
+                    (image.permute(1, 2, 0).cpu().numpy() * 255).astype(np.uint8)
+                )
                 image = tensor_to_bgr(image)
+            else:
+                pil_image = Image.fromarray(image[:, :, ::-1])
             arcface_embeds = self.arcface_extractor.embed(image).unsqueeze(0).to(device)
         else:
             arcface_embeds = arcface_embeds.to(device)
+            if image is not None:
+                if isinstance(image, Image.Image):
+                    pil_image = image
+                elif isinstance(image, torch.Tensor):
+                    pil_image = Image.fromarray(
+                        (image.permute(1, 2, 0).cpu().numpy() * 255).astype(np.uint8)
+                    )
+                else:
+                    pil_image = Image.fromarray(image[:, :, ::-1])
+            else:
+                pil_image = None
 
         do_cfg = guidance_scale > 1.0
 
         au_tokens = self.encode_aus(aus, arcface_embeds)
         id_tokens = self.encode_identity(arcface_embeds, do_cfg=do_cfg)
+
+        # img2img: noise source image to strength level, then denoise from there
+        self.scheduler.set_timesteps(num_inference_steps, device=device)
+        init_timestep = min(int(num_inference_steps * strength), num_inference_steps)
+        t_start = max(num_inference_steps - init_timestep, 0)
+        sliced_timesteps = self.scheduler.timesteps[t_start * self.scheduler.order :]
+        latent_timestep = sliced_timesteps[:1]
+
+        if pil_image is None:
+            raise ValueError("`image` is required for img2img inference.")
+        source_latents = self.encode_source(pil_image)
+        noise = torch.randn_like(source_latents)
+        noised_latents = self.scheduler.add_noise(
+            source_latents, noise, latent_timestep
+        )
 
         return super().__call__(
             prompt=prompt,
@@ -206,5 +257,7 @@ class AUIPAdapterPipeline(StableDiffusionPipeline):
                 "au_embedding": au_tokens,
                 "au_scale": au_scale,
             },
+            latents=noised_latents,
+            timesteps=sliced_timesteps,
             **kwargs,
         )
