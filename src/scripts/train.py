@@ -109,7 +109,10 @@ def train(cfg: Args) -> None:
     train_loader, val_loader, test_loader = get_dataloaders(
         params.dataloader, params.augmentation_proba
     )
-    train_ds = train_loader.dataset
+    # Fix val/test at the end-of-curriculum distance so they are comparable to
+    # late-stage training difficulty, not the easier random-pair baseline.
+    val_loader.dataset.set_min_target_distance(params.min_frame_distance)
+    test_loader.dataset.set_min_target_distance(params.min_frame_distance)
 
     unet, au_encoder, identity_adapter, optimizer, train_loader = accelerator.prepare(
         unet, au_encoder, identity_adapter, optimizer, train_loader
@@ -143,7 +146,7 @@ def train(cfg: Args) -> None:
             * epoch
             / max(params.epochs - 1, 1)
         )
-        train_ds.set_min_target_distance(dist)
+        train_loader.dataset.set_min_target_distance(dist)
 
         train_loss = train_one_epoch(
             unet,
