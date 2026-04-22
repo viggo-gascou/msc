@@ -45,8 +45,8 @@ accelerate launch --multi_gpu \
     --mixed_precision bf16 \
     --dynamo_backend no \
     src/scripts/train.py \
-    --parameters.dataloader.batch-size 16 \
-    --parameters.gradient-accumulation-steps 3
+    --parameters.dataloader.batch-size 8 \
+    --parameters.gradient-accumulation-steps 6
 SCRIPT_EXIT=$?
 
 echo "Done, finished at $(date)"
