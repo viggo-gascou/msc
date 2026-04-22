@@ -17,6 +17,9 @@ module load uv/0.7.13-GCCcore-14.2.0
 # Never sync venv
 export UV_NO_SYNC=1
 
+# Enforce offline mode to avoid any network requests from uv
+export UV_OFFLINE=1
+
 # Set this to match "cpus-per-task", supresses ONNX warning on cpu affinity
 export OMP_NUM_THREADS=6
 
@@ -26,11 +29,11 @@ export NO_ALBUMENTATIONS_UPDATE=1
 ## RUN
 
 echo "Running on $(hostname):"
-echo "Using GPU $(nvidia-smi --query-gpu=gpu_name --format=csv,noheader)"
+nvidia-smi --query-gpu=index,gpu_name,memory.total --format=csv,noheader,nounits | awk -F',' '{printf "  GPU %s: %s (%s MiB)\n", $1, $2, $3}'
+VRAM_TOTAL=$(nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits | awk '{s+=$1} END {print s}')
+echo "Total VRAM: ${VRAM_TOTAL} MiB across $(nvidia-smi --query-gpu=name --format=csv,noheader | wc -l) GPUs"
 
-VRAM_TOTAL=$(nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits | tr -d ' ')
-echo "Total GPU RAM: ${VRAM_TOTAL} MiB"
-
+echo "Setup complete, running script at $(date)"
 # run the script
 uv run accelerate launch --multi_gpu \
     --num_processes 2 \
@@ -38,9 +41,8 @@ uv run accelerate launch --multi_gpu \
     --mixed_precision bf16 \
     --dynamo_backend no \
     src/scripts/train.py \
-    --parameters.dataloader.batch-size 8 \
-    --parameters.gradient-accumulation-steps 6 \
-    --parameters.gradient-checkpointing
+    --parameters.dataloader.batch-size 16 \
+    --parameters.gradient-accumulation-steps 3
 SCRIPT_EXIT=$?
 
 echo "Done, finished at $(date)"
