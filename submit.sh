@@ -23,7 +23,6 @@ REPO_ROOT="$(dirname "$(realpath "${BASH_SOURCE[0]}")")"
 
 # Run git pull ONCE for sync* modes
 if [[ "$MODE" == sync* ]]; then
-    echo "Sync mode detected → running git pull"
     git -C "$REPO_ROOT" pull
 fi
 
