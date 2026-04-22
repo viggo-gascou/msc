@@ -56,7 +56,8 @@ def forward_batch(
 
     # Per-sample CFG dropout: zero out AU values with probability cfg_dropout_prob
     # so the model learns both conditional and unconditional distributions.
-    if params.cfg_dropout_prob > 0:
+    # Only applied during training — val/test always evaluate full conditioning.
+    if params.cfg_dropout_prob > 0 and unet.training:
         keep = torch.rand(au_values.shape[0], device=device) >= params.cfg_dropout_prob
         au_values = au_values * keep.float().unsqueeze(1)
 
