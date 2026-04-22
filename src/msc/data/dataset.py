@@ -204,13 +204,33 @@ class BP4DDataset(VisionDataset):
 
         self.index = index.reset_index(drop=True)
 
-        self.seq_index: defaultdict[tuple[str, str], list[int]] = defaultdict(list)
+        # Each entry is (dataset_idx, 0-based frame number) to allow fast
+        # distance filtering without iloc lookups in __getitem__.
+        self.seq_index: defaultdict[tuple[str, str], list[tuple[int, int]]] = (
+            defaultdict(list)
+        )
         for i, row in enumerate(self.index.itertuples(index=False)):
-            self.seq_index[(str(row.subject), str(row.task))].append(i)
+            self.seq_index[(str(row.subject), str(row.task))].append(
+                (i, int(row.frame) - 1)
+            )
+
+        # Minimum temporal distance between source and target frames for curriculum
+        # learning. Set to 0 to disable filtering.
+        self.min_target_distance: int = 0
 
         # HDF5 handles — opened lazily in _open_h5 to support multiprocessing
         self.preprocessed: dict[str, h5py.File] = {}
         self.embeddings: dict[str, h5py.File] = {}
+
+    def set_min_target_distance(self, distance: int) -> None:
+        """Set the minimum temporal distance for target frame sampling.
+
+        Args:
+            distance:
+                Minimum absolute frame difference between source and target.
+                Set to 0 to disable filtering.
+        """
+        self.min_target_distance = distance
 
     def __len__(self) -> int:
         """Return the number of samples in the dataset."""
@@ -253,11 +273,23 @@ class BP4DDataset(VisionDataset):
         if self.target_transform is not None:
             aus = self.target_transform(aus)
 
-        # Sample a target frame from the same subject/task
+        # Sample a target frame from the same subject/task, respecting the
+        # minimum temporal distance for curriculum learning.
         candidates = self.seq_index[(subject, task)]
-        target_idx = candidates[int(torch.randint(len(candidates), (1,)).item())]
+        if self.min_target_distance > 0:
+            valid = [
+                (idx, f)
+                for idx, f in candidates
+                if abs(f - img_frame) >= self.min_target_distance
+            ]
+            if not valid:
+                valid = candidates
+        else:
+            valid = candidates
+        target_idx, target_img_frame = valid[
+            int(torch.randint(len(valid), (1,)).item())
+        ]
         target_row = self.index.iloc[target_idx]
-        target_img_frame = int(target_row["frame"]) - 1
         target_image = self.load_raw(subject, task, target_img_frame)
         if self.transform is not None:
             target_image = self.transform(target_image)

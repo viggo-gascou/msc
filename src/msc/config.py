@@ -90,6 +90,13 @@ class Params:
         gradient_checkpointing:
             Enable gradient checkpointing on the UNet to trade compute for VRAM.
             Defaults to False.
+        max_frame_distance:
+            Minimum temporal distance (frames) between source and target at the
+            start of training. Anneals linearly to min_frame_distance over all
+            epochs. Defaults to 50.
+        min_frame_distance:
+            Minimum temporal distance (frames) between source and target at the
+            end of training. Defaults to 5.
     """
 
     optimizer: OptimizerParams
@@ -108,6 +115,8 @@ class Params:
     snr_gamma: float = 5.0
     cfg_dropout_prob: float = 0.1
     gradient_checkpointing: bool = False
+    max_frame_distance: int = 50
+    min_frame_distance: int = 5
 
 
 @dataclass
