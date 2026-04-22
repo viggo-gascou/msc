@@ -103,7 +103,7 @@ class Params:
     dataloader: DataloaderParams
     unet_model: str = "stable-diffusion-v1-5/stable-diffusion-v1-5"
     vae_model: str | None = None
-    epochs: int = 10
+    epochs: int = 50
     patience: int = 5
     early_stopping: bool = True
     augmentation_proba: float = 0.5

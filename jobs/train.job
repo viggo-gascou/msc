@@ -4,8 +4,8 @@
 #SBATCH --output=logs/SLURM/train.%j.out
 #SBATCH --cpus-per-task=6
 #SBATCH --mem-per-cpu=6G
-#SBATCH --gres=gpu:a100_40gb:1
-#SBATCH --time=8:00:00
+#SBATCH --gres=gpu:a30:2
+#SBATCH --time=10:00:00
 #SBATCH --partition=scavenge
 #SBATCH --mail-type=BEGIN,END
 
@@ -32,6 +32,11 @@ VRAM_TOTAL=$(nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits |
 echo "Total GPU RAM: ${VRAM_TOTAL} MiB"
 
 # run the script
-uv run src/scripts/train.py
+uv run accelerate launch --multi_gpu --num_processes 2 src/scripts/train.py \
+    --parameters.dataloader.batch-size 8 \
+    --parameters.gradient-accumulation-steps 6 \
+    --parameters.gradient-checkpointing
+SCRIPT_EXIT=$?
 
 echo "Done, finished at $(date)"
+exit $SCRIPT_EXIT
