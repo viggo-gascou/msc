@@ -109,6 +109,7 @@ def train(cfg: Args) -> None:
     train_loader, val_loader, test_loader = get_dataloaders(
         params.dataloader, params.augmentation_proba
     )
+    train_ds = train_loader.dataset
 
     unet, au_encoder, identity_adapter, optimizer, train_loader = accelerator.prepare(
         unet, au_encoder, identity_adapter, optimizer, train_loader
@@ -136,6 +137,14 @@ def train(cfg: Args) -> None:
         )
 
     for epoch in tqdm(range(start_epoch, params.epochs), desc="Epochs", unit="epoch"):
+        dist = round(
+            params.max_frame_distance
+            - (params.max_frame_distance - params.min_frame_distance)
+            * epoch
+            / max(params.epochs - 1, 1)
+        )
+        train_ds.set_min_target_distance(dist)
+
         train_loss = train_one_epoch(
             unet,
             vae,
