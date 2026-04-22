@@ -44,10 +44,12 @@ def forward_batch(
         params: Training parameters.
 
     Returns:
-        Scalar MSE loss between predicted and actual noise.
+        Scalar x0 loss between the predicted clean image (recovered from noisy
+        source) and the target latents, optionally weighted by Min-SNR.
     """
     vae_dtype = next(vae.parameters()).dtype
     proj_dtype = next(face_proj.parameters()).dtype
+    src_pixels = batch["image"].to(device=device, dtype=vae_dtype)
     tgt_pixels = batch["target_image"].to(device=device, dtype=vae_dtype)
     arcface_embeds = batch["arcface"].to(device=device, dtype=proj_dtype)
     au_values = batch["target_aus"].to(device)
@@ -62,20 +64,23 @@ def forward_batch(
     au_tokens = identity_adapter(au_tokens, arcface_embeds)
     id_tokens = face_proj(arcface_embeds)
 
+    src_latents = (
+        vae.encode(src_pixels).latent_dist.sample() * vae.config.scaling_factor
+    )
     tgt_latents = (
         vae.encode(tgt_pixels).latent_dist.sample() * vae.config.scaling_factor
     )
 
-    noise = torch.randn_like(tgt_latents)
+    noise = torch.randn_like(src_latents)
     timesteps = torch.randint(
-        0, scheduler.config.num_train_timesteps, (tgt_latents.shape[0],), device=device
+        0, scheduler.config.num_train_timesteps, (src_latents.shape[0],), device=device
     ).long()
-    noisy_tgt = scheduler.add_noise(
-        original_samples=tgt_latents, noise=noise, timesteps=timesteps
+    noisy_src = scheduler.add_noise(
+        original_samples=src_latents, noise=noise, timesteps=timesteps
     )
 
     ids = tokenizer(
-        [""] * tgt_latents.shape[0],
+        [""] * src_latents.shape[0],
         padding="max_length",
         max_length=tokenizer.model_max_length,
         truncation=True,
@@ -84,7 +89,7 @@ def forward_batch(
     cond = text_encoder(ids).last_hidden_state
 
     pred_eps = unet(  # type: ignore[not-callable]
-        sample=noisy_tgt,
+        sample=noisy_src,
         timestep=timesteps,
         encoder_hidden_states=cond,
         cross_attention_kwargs={
@@ -95,46 +100,33 @@ def forward_batch(
         },
     ).sample
 
+    # Recover the implied clean image from the noisy source and predicted noise.
+    # Comparing against target latents directly supervises expression transfer —
+    # the model must steer denoising from source toward the target expression.
     if params.snr_gamma < 0:
         snr_weights = None
-        eps_loss = F.mse_loss(pred_eps.float(), noise.float())
     else:
         # Compute loss-weights as per Section 3.4 of https://arxiv.org/abs/2303.09556.
         # Since we predict the noise instead of x_0, the original formulation is
-        # slightly changed.
-        # This is discussed in Section 4.2 of the same paper.
+        # slightly changed. This is discussed in Section 4.2 of the same paper.
         snr = compute_snr(scheduler, timesteps)
         snr_weights = torch.stack(
             [snr, params.snr_gamma * torch.ones_like(timesteps)], dim=1
         ).min(dim=1)[0]
 
         # we are either predicting the noise, epsilon (used in SD 1.5), or
-        # "velocity" (used in SD 2.0)
+        # "velocity" (used in SD 2.x)
         if scheduler.config.prediction_type == "epsilon":
             snr_weights = snr_weights / snr
         elif scheduler.config.prediction_type == "v_prediction":
             snr_weights = snr_weights / (snr + 1)
 
-        eps_loss = (
-            F.mse_loss(pred_eps.float(), noise.float(), reduction="none").mean(
-                dim=list(range(1, pred_eps.ndim))
-            )
-            * snr_weights
-        ).mean()
-
-    if params.x0_loss_weight > 0:
-        alpha_t = scheduler.alphas_cumprod[timesteps].to(pred_eps).view(-1, 1, 1, 1)
-        pred_x0 = (noisy_tgt - (1 - alpha_t).sqrt() * pred_eps) / alpha_t.sqrt()
-        x0_loss_raw = F.mse_loss(pred_x0.float(), tgt_latents.float(), reduction="none")
-        if snr_weights is not None:
-            x0_loss = (
-                x0_loss_raw.mean(dim=list(range(1, pred_x0.ndim))) * snr_weights
-            ).mean()
-        else:
-            x0_loss = x0_loss_raw.mean()
-        return eps_loss + params.x0_loss_weight * x0_loss
-
-    return eps_loss
+    alpha_t = scheduler.alphas_cumprod[timesteps].to(pred_eps).view(-1, 1, 1, 1)
+    pred_x0 = (noisy_src - (1 - alpha_t).sqrt() * pred_eps) / alpha_t.sqrt()
+    x0_loss = F.mse_loss(pred_x0.float(), tgt_latents.float(), reduction="none")
+    if snr_weights is not None:
+        return (x0_loss.mean(dim=list(range(1, pred_x0.ndim))) * snr_weights).mean()
+    return x0_loss.mean()
 
 
 def train_one_epoch(

@@ -66,6 +66,13 @@ BP4D_AU_OCCURRENCE_COLUMNS = [
     au for au in BP4D_AU_COLUMNS if au not in BP4D_AU_INTENSITY_COLUMNS
 ]
 
+# Maps each AU name to its index column in the parquet — intensity AUs use the
+# _int column (0-5 scale) rather than the coarser occurrence column (0/1).
+BP4D_AU_COLUMN_MAP: dict[str, str] = {
+    au: (f"{au}_int" if au in BP4D_AU_INTENSITY_COLUMNS else au)
+    for au in BP4D_AU_COLUMNS
+}
+
 # 001 up to 023
 BP4D_FEMALE_SUBJECTS = list(f"F{str(i).zfill(3)}" for i in range(1, 24))
 

@@ -15,6 +15,7 @@ from torchvision.tv_tensors import Image as TVImage
 
 from ..config import DataloaderParams
 from ..constants import (
+    BP4D_AU_COLUMN_MAP,
     BP4D_AU_COLUMNS,
     BP4D_EMBEDDINGS_DIR,
     BP4D_PREPROCESSED_DIR,
@@ -241,7 +242,8 @@ class BP4DDataset(VisionDataset):
         adaface = torch.from_numpy(emb_f[subject]["adaface"][pos])
 
         aus = torch.tensor(
-            [row.get(col, float("nan")) for col in BP4D_AU_COLUMNS], dtype=torch.float32
+            [row.get(BP4D_AU_COLUMN_MAP[col], float("nan")) for col in BP4D_AU_COLUMNS],
+            dtype=torch.float32,
         )
 
         image = self.load_raw(subject, task, img_frame)
