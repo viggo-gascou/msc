@@ -16,9 +16,9 @@ LOG_DIR.mkdir(exist_ok=True, parents=True)
 MODEL_DIR.mkdir(exist_ok=True, parents=True)
 
 # BP4D data constants
-BP4D_SEQUENCES_DIR = DATA_DIR / "BP4D" / "Sample" / "Sequences"
-BP4D_CODING_DIR = DATA_DIR / "BP4D" / "Sample" / "AUCoding"
-BP4D_DATA_DIR = DATA_DIR / "BP4D" / "Sample"
+BP4D_SEQUENCES_DIR = DATA_DIR / "BP4D" / "Sequences"
+BP4D_CODING_DIR = DATA_DIR / "BP4D" / "AUCoding"
+BP4D_DATA_DIR = DATA_DIR / "BP4D"
 BP4D_INDEX_PATH = BP4D_DATA_DIR / "bp4d_index.parquet"
 BP4D_TRAIN_INDEX_PATH = BP4D_DATA_DIR / "bp4d_index.parquet"
 BP4D_TEST_INDEX_PATH = BP4D_DATA_DIR / "bp4d_index.parquet"
