@@ -32,7 +32,12 @@ VRAM_TOTAL=$(nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits |
 echo "Total GPU RAM: ${VRAM_TOTAL} MiB"
 
 # run the script
-uv run accelerate launch --multi_gpu --num_processes 2 src/scripts/train.py \
+uv run accelerate launch --multi_gpu \
+    --num_processes 2 \
+    --num_machines 1 \
+    --mixed_precision bf16 \
+    --dynamo_backend no \
+    src/scripts/train.py \
     --parameters.dataloader.batch-size 8 \
     --parameters.gradient-accumulation-steps 6 \
     --parameters.gradient-checkpointing

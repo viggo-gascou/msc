@@ -16,13 +16,40 @@ LOG_DIR.mkdir(exist_ok=True, parents=True)
 MODEL_DIR.mkdir(exist_ok=True, parents=True)
 
 # BP4D data constants
-BP4D_SEQUENCES_DIR = DATA_DIR / "BP4D" / "Sequences"
-BP4D_CODING_DIR = DATA_DIR / "BP4D" / "AUCoding"
-BP4D_DATA_DIR = DATA_DIR / "BP4D"
+# Raw sequences and AU coding live in the shared group folder on HPC;
+# fall back to the local data dir otherwise.
+HPC_DATA_DIR = Path("/home/semedit/data")
+
+BP4D_SEQUENCES_DIR = (
+    HPC_DATA_DIR / "BP4D" / "Sequences"
+    if HPC_DATA_DIR.exists()
+    else DATA_DIR / "BP4D" / "Sequences"
+)
+BP4D_CODING_DIR = (
+    HPC_DATA_DIR / "BP4D" / "AUCoding"
+    if HPC_DATA_DIR.exists()
+    else DATA_DIR / "BP4D" / "AUCoding"
+)
+BP4D_DATA_DIR = (
+    DATA_DIR / "BP4D" if HPC_DATA_DIR.exists() else DATA_DIR / "Sample" / "BP4D"
+)
 BP4D_INDEX_PATH = BP4D_DATA_DIR / "bp4d_index.parquet"
-BP4D_TRAIN_INDEX_PATH = BP4D_DATA_DIR / "bp4d_train_index.parquet"
-BP4D_TEST_INDEX_PATH = BP4D_DATA_DIR / "bp4d_test_index.parquet"
-BP4D_VAL_INDEX_PATH = BP4D_DATA_DIR / "bp4d_val_index.parquet"
+# On HPC use the proper split indices; locally fall back to the single sample index.
+BP4D_TRAIN_INDEX_PATH = (
+    BP4D_INDEX_PATH.with_stem("bp4d_train_index")
+    if HPC_DATA_DIR.exists()
+    else BP4D_INDEX_PATH
+)
+BP4D_VAL_INDEX_PATH = (
+    BP4D_INDEX_PATH.with_stem("bp4d_val_index")
+    if HPC_DATA_DIR.exists()
+    else BP4D_INDEX_PATH
+)
+BP4D_TEST_INDEX_PATH = (
+    BP4D_INDEX_PATH.with_stem("bp4d_test_index")
+    if HPC_DATA_DIR.exists()
+    else BP4D_INDEX_PATH
+)
 
 BP4D_PREPROCESSED_DIR = BP4D_DATA_DIR / "Preprocessed"
 BP4D_EMBEDDINGS_DIR = BP4D_DATA_DIR / "Embeddings"
