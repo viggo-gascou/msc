@@ -170,8 +170,11 @@ def train_one_epoch(
     identity_adapter.train()
     epoch_loss = 0.0
     trainable_params = [p for pg in optimizer.param_groups for p in pg["params"]]
+    disable_tqdm = not accelerator.is_main_process
 
-    for batch in tqdm(loader, desc="Training", unit="batch", leave=False):
+    for batch in tqdm(
+        loader, desc="Training", unit="batch", leave=False, disable=disable_tqdm
+    ):
         with accelerator.accumulate(unet, au_encoder, identity_adapter):
             loss = forward_batch(
                 batch,
@@ -237,9 +240,12 @@ def validate(
     au_encoder.eval()
     identity_adapter.eval()
     epoch_loss = 0.0
+    disable_tqdm = not accelerator.is_main_process
 
     with torch.no_grad():
-        for batch in tqdm(loader, desc="Validation", unit="batch", leave=False):
+        for batch in tqdm(
+            loader, desc="Validation", unit="batch", leave=False, disable=disable_tqdm
+        ):
             loss = forward_batch(
                 batch,
                 unet,
@@ -296,9 +302,12 @@ def evaluate(
     au_encoder.eval()
     identity_adapter.eval()
     epoch_loss = 0.0
+    disable_tqdm = not accelerator.is_main_process
 
     with torch.no_grad():
-        for batch in tqdm(loader, desc="Testing", unit="batch", leave=False):
+        for batch in tqdm(
+            loader, desc="Testing", unit="batch", leave=False, disable=disable_tqdm
+        ):
             loss = forward_batch(
                 batch,
                 unet,
