@@ -4,6 +4,13 @@
 #          ./submit.sh sync-train --nodelist=cn13 --time=4:00:00
 #          ./submit.sh run <script> [extra sbatch args]
 
+set -euo pipefail
+
+if [[ $# -lt 1 ]]; then
+    echo "Usage: $0 [sync|train|sync-train|run|sync-run] [extra sbatch args]" >&2
+    exit 1
+fi
+
 MODE="$1"
 shift
 # remaining args passed to sbatch call
@@ -14,41 +21,54 @@ mkdir -p logs/SLURM
 # realpath resolves BASH_SOURCE[0] to the absolute path (the script), dirname strips the last element in the path
 REPO_ROOT="$(dirname "$(realpath "${BASH_SOURCE[0]}")")"
 
+# Run git pull ONCE for sync* modes
+if [[ "$MODE" == sync* ]]; then
+    echo "Sync mode detected → running git pull"
+    git -C "$REPO_ROOT" pull
+fi
+
 submit_job() {
-    # if mode sync or sync-train or sync-run git pull
-    if [[ "$MODE" == "sync" || "$MODE" == "sync-train" || "$MODE" == "sync-run" ]]; then
-        git pull
-    fi
+    local JOB_NAME="$1"
+    shift
+
     LAST_JOB_ID=$(sbatch --parsable --chdir="$REPO_ROOT" "$@")
-    echo "Submitted $MODE job: $LAST_JOB_ID" >&2
+    echo "Submitted $JOB_NAME job: $LAST_JOB_ID" >&2
 }
 
 case "$MODE" in
     sync)
-        submit_job jobs/sync.job
+        submit_job sync jobs/sync.job
         ;;
     train)
-        submit_job "$@" jobs/train.job
+        submit_job train "$@" jobs/train.job
         ;;
     sync-train)
-        submit_job jobs/sync.job
+        submit_job sync jobs/sync.job
         SYNC_ID=$LAST_JOB_ID
-        submit_job --dependency=afterok:$SYNC_ID "$@" jobs/train.job
+        submit_job train --dependency=afterok:$SYNC_ID "$@" jobs/train.job
         ;;
     run)
-        SCRIPT=$1
+        if [[ $# -lt 1 ]]; then
+            echo "Error: run mode requires a script argument" >&2
+            exit 1
+        fi
+        SCRIPT="$1"
         shift
-        submit_job "$@" jobs/run.job "$SCRIPT"
+        submit_job run "$@" jobs/run.job "$SCRIPT"
         ;;
     sync-run)
-        SCRIPT=$1
+        if [[ $# -lt 1 ]]; then
+            echo "Error: sync-run mode requires a script argument" >&2
+            exit 1
+        fi
+        SCRIPT="$1"
         shift
-        submit_job jobs/sync.job
+        submit_job sync jobs/sync.job
         SYNC_ID=$LAST_JOB_ID
-        submit_job --dependency=afterok:$SYNC_ID "$@" jobs/run.job "$SCRIPT"
+        submit_job run --dependency=afterok:$SYNC_ID "$@" jobs/run.job "$SCRIPT"
         ;;
     *)
-        echo "Usage: $0 [sync|train|sync-train|run] [extra sbatch args]"
+        echo "Usage: $0 [sync|train|sync-train|run|sync-run] [extra sbatch args]" >&2
         exit 1
         ;;
 esac
