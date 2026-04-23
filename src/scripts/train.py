@@ -185,8 +185,8 @@ def train(cfg: Args) -> None:
             patience_counter = 0
             if accelerator.is_main_process:
                 save_au_adapter(
-                    au_encoder,
-                    identity_adapter,
+                    accelerator.unwrap_model(model=au_encoder),
+                    accelerator.unwrap_model(model=identity_adapter),
                     au_procs,
                     "best_au_adapter.safetensors",
                 )
