@@ -63,6 +63,8 @@ name = "pytorch"
 url = "https://download.pytorch.org/whl/cu126"
 explicit = true
 
+[project.scripts]
+train = "scripts.train:train"
 
 [tool.ruff]
 target-version = "py312"
