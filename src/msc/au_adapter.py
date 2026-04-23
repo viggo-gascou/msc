@@ -558,7 +558,12 @@ def load_au_adapter(
 
     def _strip(d: dict[str, torch.Tensor], prefix: str) -> dict[str, torch.Tensor]:
         n = len(prefix) + 1
-        return {k[n:]: v for k, v in d.items() if k.startswith(prefix + ".")}
+        # Strip DDP "module." prefix if present (saved from multi-GPU training)
+        return {
+            k[n:].removeprefix("module."): v
+            for k, v in d.items()
+            if k.startswith(prefix + ".")
+        }
 
     au_encoder = AUEncoder()
     au_encoder.load_state_dict(_strip(flat, "au_encoder"))

@@ -23,7 +23,7 @@ HPC_DATA_DIR = Path("/home/semedit/data")
 BP4D_SEQUENCES_DIR = (
     HPC_DATA_DIR / "BP4D" / "Sequences"
     if HPC_DATA_DIR.exists()
-    else DATA_DIR / "BP4D" / "Sequences"
+    else DATA_DIR / "BP4D" / "Sample" / "Sequences"
 )
 BP4D_CODING_DIR = (
     HPC_DATA_DIR / "BP4D" / "AUCoding"
@@ -31,7 +31,7 @@ BP4D_CODING_DIR = (
     else DATA_DIR / "BP4D" / "AUCoding"
 )
 BP4D_DATA_DIR = (
-    DATA_DIR / "BP4D" if HPC_DATA_DIR.exists() else DATA_DIR / "Sample" / "BP4D"
+    DATA_DIR / "BP4D" if HPC_DATA_DIR.exists() else DATA_DIR / "BP4D" / "Sample"
 )
 BP4D_INDEX_PATH = BP4D_DATA_DIR / "bp4d_index.parquet"
 # On HPC use the proper split indices; locally fall back to the single sample index.

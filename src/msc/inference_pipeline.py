@@ -258,6 +258,6 @@ class AUIPAdapterPipeline(StableDiffusionPipeline):
                 "au_scale": au_scale,
             },
             latents=noised_latents,
-            timesteps=sliced_timesteps,
+            timesteps=sliced_timesteps.cpu().tolist(),
             **kwargs,
         )
