@@ -195,7 +195,7 @@ class BP4DDataset(VisionDataset):
         self.preprocessed_dir = preprocessed_dir
         self.embeddings_dir = embeddings_dir
 
-        index = load_index(index_path)
+        index = load_index(path=index_path)
 
         if tasks is not None:
             index = index[index["task"].isin(tasks)]
@@ -251,8 +251,12 @@ class BP4DDataset(VisionDataset):
         au_frame: int = int(row["frame"])
         img_frame = au_frame - 1  # AU 1-based → image 0-based
 
-        pre_f = self.open_h5(self.preprocessed, self.preprocessed_dir / f"{task}.h5")
-        emb_f = self.open_h5(self.embeddings, self.embeddings_dir / f"{task}.h5")
+        pre_f = self.open_h5(
+            cache=self.preprocessed, path=self.preprocessed_dir / f"{task}.h5"
+        )
+        emb_f = self.open_h5(
+            cache=self.embeddings, path=self.embeddings_dir / f"{task}.h5"
+        )
 
         # Locate this frame in the HDF5 arrays via the stored indices dataset
         indices: np.ndarray = pre_f[subject]["indices"][:]
@@ -290,7 +294,9 @@ class BP4DDataset(VisionDataset):
             int(torch.randint(len(valid), (1,)).item())
         ]
         target_row = self.index.iloc[target_idx]
-        target_image = self.load_raw(subject, task, target_img_frame)
+        target_image = self.load_raw(
+            subject=subject, task=task, img_frame=target_img_frame
+        )
         if self.transform is not None:
             target_image = self.transform(target_image)
         target_aus = torch.tensor(
@@ -346,7 +352,11 @@ class BP4DDataset(VisionDataset):
         Raises:
             FileNotFoundError: If no image is found for the given subject/task/frame.
         """
-        path = resolve_frame_path(Path(self.root), subject, task, img_frame)
+        path = resolve_frame_path(
+            root=Path(self.root), subject=subject, task=task, img_frame=img_frame
+        )
         if path is None:
-            raise FileNotFoundError(f"No image found for {subject}/{task}/{img_frame}")
+            raise FileNotFoundError(
+                f"No image found for {self.root}/{subject}/{task}/{img_frame}"
+            )
         return TVImage(decode_image(str(path), mode=ImageReadMode.RGB))

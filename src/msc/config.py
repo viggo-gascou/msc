@@ -1,6 +1,9 @@
 """Configuration for the project."""
 
 from dataclasses import dataclass
+from typing import Annotated
+
+import tyro
 
 from .enums import LogLevel, ONNXProvider
 
@@ -39,7 +42,7 @@ class OptimizerParams:
             AdamW epsilon for numerical stability. Defaults to 1e-8.
     """
 
-    learning_rate: float = 1e-4
+    learning_rate: Annotated[float, tyro.conf.arg(name="lr")] = 1e-4
     weight_decay: float = 0.01
     adam_beta1: float = 0.9
     adam_beta2: float = 0.999
