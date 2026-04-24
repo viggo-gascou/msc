@@ -31,9 +31,10 @@ export NO_ALBUMENTATIONS_UPDATE=1
 ## RUN
 
 MASTER_NODE=$(scontrol show hostnames $SLURM_JOB_NODELIST | head -1)
+MASTER_PORT=$(shuf -i8000-9999 -n1)
 
 echo "Running on nodes: $(scontrol show hostnames $SLURM_JOB_NODELIST | tr '\n' ' ')"
-echo "Master node: $MASTER_NODE"
+echo "Master node: $MASTER_NODE, port: $MASTER_PORT"
 nvidia-smi --query-gpu=index,gpu_name,memory.total --format=csv,noheader,nounits | awk -F',' '{printf "  GPU %s: %s (%s MiB)\n", $1, $2, $3}'
 VRAM_TOTAL=$(nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits | awk '{s+=$1} END {print s}')
 echo "Total VRAM per node: ${VRAM_TOTAL} MiB"
@@ -50,7 +51,7 @@ srun accelerate launch \
     --num_machines 2 \
     --machine_rank $SLURM_PROCID \
     --main_process_ip $MASTER_NODE \
-    --main_process_port 29500 \
+    --main_process_port $MASTER_PORT \
     --mixed_precision bf16 \
     --dynamo_backend no \
     src/scripts/train.py \
