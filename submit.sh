@@ -1,13 +1,14 @@
 #!/bin/bash
-# Usage: ./submit.sh [sync|train|sync-train|run] [extra sbatch args]
+# Usage: ./submit.sh [sync|train|train-multi|sync-train|run] [extra sbatch args]
 # Example: ./submit.sh train --nodelist=cn13
+#          ./submit.sh train-multi
 #          ./submit.sh sync-train --nodelist=cn13 --time=4:00:00
 #          ./submit.sh run <script> [extra sbatch args]
 
 set -euo pipefail
 
 if [[ $# -lt 1 ]]; then
-    echo "Usage: $0 [sync|train|sync-train|run|sync-run] [extra sbatch args]" >&2
+    echo "Usage: $0 [sync|train|train-multi|sync-train|sync-train-multi|run|sync-run] [extra sbatch args]" >&2
     exit 1
 fi
 
@@ -41,6 +42,14 @@ case "$MODE" in
     train)
         submit_job train "$@" jobs/train.job
         ;;
+    train-multi)
+        submit_job train-multi "$@" jobs/train-multi.job
+        ;;
+    sync-train-multi)
+        submit_job sync jobs/sync.job
+        SYNC_ID=$LAST_JOB_ID
+        submit_job train-multi --dependency=afterok:$SYNC_ID "$@" jobs/train-multi.job
+        ;;
     sync-train)
         submit_job sync jobs/sync.job
         SYNC_ID=$LAST_JOB_ID
@@ -67,7 +76,7 @@ case "$MODE" in
         submit_job run --dependency=afterok:$SYNC_ID "$@" jobs/run.job "$SCRIPT"
         ;;
     *)
-        echo "Usage: $0 [sync|train|sync-train|run|sync-run] [extra sbatch args]" >&2
+        echo "Usage: $0 [sync|train|train-multi|sync-train|sync-train-multi|run|sync-run] [extra sbatch args]" >&2
         exit 1
         ;;
 esac
