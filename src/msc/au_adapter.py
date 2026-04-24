@@ -35,9 +35,9 @@ class AUEncoder(nn.Module):
     def __init__(
         self,
         num_aus: int = NUM_AUS,
-        hidden: int = 256,
+        hidden: int = 64,
         dim: int = 768,
-        num_tokens: int = 4,
+        num_tokens: int = 1,
     ) -> None:
         """Initialise AUEncoder.
 

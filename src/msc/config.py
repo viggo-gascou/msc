@@ -100,6 +100,11 @@ class Params:
         min_frame_distance:
             Minimum temporal distance (frames) between source and target at the
             end of training. Defaults to 5.
+        reconstruction:
+            If True, use a reconstruction objective (denoise source back to
+            itself conditioned on source AUs) instead of the transfer objective
+            (denoise source toward a different target frame). Disables the frame
+            distance curriculum. Defaults to False.
     """
 
     optimizer: OptimizerParams
@@ -120,6 +125,7 @@ class Params:
     gradient_checkpointing: bool = False
     max_frame_distance: int = 50
     min_frame_distance: int = 5
+    reconstruction: bool = False
 
 
 @dataclass

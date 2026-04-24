@@ -50,9 +50,14 @@ def forward_batch(
     vae_dtype = next(vae.parameters()).dtype
     proj_dtype = next(face_proj.parameters()).dtype
     src_pixels = batch["image"].to(device=device, dtype=vae_dtype)
-    tgt_pixels = batch["target_image"].to(device=device, dtype=vae_dtype)
     arcface_embeds = batch["arcface"].to(device=device, dtype=proj_dtype)
-    au_values = batch["target_aus"].to(device)
+
+    if params.reconstruction:
+        # Reconstruct source from itself; condition on source AUs so the model
+        # learns to associate AU values with the appearance they produce.
+        au_values = batch["aus"].to(device)
+    else:
+        au_values = batch["target_aus"].to(device)
 
     # Per-sample CFG dropout: zero out AU values with probability cfg_dropout_prob
     # so the model learns both conditional and unconditional distributions.
@@ -68,9 +73,11 @@ def forward_batch(
     src_latents = (
         vae.encode(src_pixels).latent_dist.sample() * vae.config.scaling_factor
     )
-    tgt_latents = (
-        vae.encode(tgt_pixels).latent_dist.sample() * vae.config.scaling_factor
-    )
+    if not params.reconstruction:
+        tgt_pixels = batch["target_image"].to(device=device, dtype=vae_dtype)
+        tgt_latents = (
+            vae.encode(tgt_pixels).latent_dist.sample() * vae.config.scaling_factor
+        )
 
     noise = torch.randn_like(src_latents)
     timesteps = torch.randint(
@@ -124,7 +131,11 @@ def forward_batch(
 
     alpha_t = scheduler.alphas_cumprod[timesteps].to(pred_eps).view(-1, 1, 1, 1)
     pred_x0 = (noisy_src - (1 - alpha_t).sqrt() * pred_eps) / alpha_t.sqrt()
-    x0_loss = F.mse_loss(pred_x0.float(), tgt_latents.float(), reduction="none")
+    if params.reconstruction:
+        target_latents = src_latents
+    else:
+        target_latents = tgt_latents
+    x0_loss = F.mse_loss(pred_x0.float(), target_latents.float(), reduction="none")
     if snr_weights is not None:
         return (x0_loss.mean(dim=list(range(1, pred_x0.ndim))) * snr_weights).mean()
     return x0_loss.mean()
