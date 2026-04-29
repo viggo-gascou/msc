@@ -45,8 +45,13 @@ accelerate launch --multi_gpu \
     --mixed_precision bf16 \
     --dynamo_backend no \
     src/scripts/train.py \
+    --parameters.unet-model "SG161222/Realistic_Vision_V4.0_noVAE" \
+    --parameters.optimizer.lr 1e-4 \
     --parameters.dataloader.batch-size 8 \
-    --parameters.gradient-accumulation-steps 6
+    --parameters.gradient-accumulation-steps 6 \
+    --parameters.reconstruction \
+    --parameters.lora.enabled \
+    --parameters.lora.rank 16
 SCRIPT_EXIT=$?
 
 echo "Done, finished at $(date)"
