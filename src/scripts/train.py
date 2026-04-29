@@ -72,7 +72,7 @@ def train(cfg: Args) -> None:
         params, ip_cfg
     )
     unet, vae, text_encoder, au_procs = freeze_model_layers(
-        unet, vae, text_encoder, au_procs
+        unet, vae, text_encoder, au_procs, params.lora
     )
     if params.gradient_checkpointing:
         unet.enable_gradient_checkpointing()
@@ -93,12 +93,7 @@ def train(cfg: Args) -> None:
         params=(
             list(au_encoder.parameters())
             + list(identity_adapter.parameters())
-            + [
-                p
-                for proc in au_procs.values()
-                for p in proc.parameters()
-                if p.requires_grad
-            ]
+            + [p for p in unet.parameters() if p.requires_grad]
         ),
         lr=opt_cfg.learning_rate,
         betas=(opt_cfg.adam_beta1, opt_cfg.adam_beta2),

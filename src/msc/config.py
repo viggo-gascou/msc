@@ -50,6 +50,28 @@ class OptimizerParams:
 
 
 @dataclass
+class LoraParams:
+    """Configuration for LoRA fine-tuning of the UNet.
+
+    Attributes:
+        enabled:
+            Whether to apply LoRA to the UNet attention layers. Defaults to False.
+        rank:
+            LoRA rank (r). Higher rank = more capacity. Defaults to 32.
+        alpha:
+            LoRA scaling factor (lora_alpha). Defaults to None, which uses
+            ``rank`` as the alpha (effective scale = 1.0).
+        dropout:
+            Dropout probability applied to LoRA layers. Defaults to 0.0.
+    """
+
+    enabled: bool = False
+    rank: int = 32
+    alpha: int | None = None
+    dropout: float = 0.0
+
+
+@dataclass
 class Params:
     """Configuration for the project.
 
@@ -58,6 +80,8 @@ class Params:
             Optimizer configuration.
         dataloader:
             Dataloader configuration.
+        lora:
+            LoRA fine-tuning configuration for the UNet.
         unet_model:
             The UNet model id to use.
             Defaults to 'stable-diffusion-v1-5/stable-diffusion-v1-5'.
@@ -109,6 +133,7 @@ class Params:
 
     optimizer: OptimizerParams
     dataloader: DataloaderParams
+    lora: LoraParams
     unet_model: str = "stable-diffusion-v1-5/stable-diffusion-v1-5"
     vae_model: str | None = None
     epochs: int = 50

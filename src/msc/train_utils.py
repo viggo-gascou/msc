@@ -73,12 +73,6 @@ def forward_batch(
     src_latents = (
         vae.encode(src_pixels).latent_dist.sample() * vae.config.scaling_factor
     )
-    if not params.reconstruction:
-        tgt_pixels = batch["target_image"].to(device=device, dtype=vae_dtype)
-        tgt_latents = (
-            vae.encode(tgt_pixels).latent_dist.sample() * vae.config.scaling_factor
-        )
-
     noise = torch.randn_like(src_latents)
     timesteps = torch.randint(
         0, scheduler.config.num_train_timesteps, (src_latents.shape[0],), device=device
@@ -134,7 +128,10 @@ def forward_batch(
     if params.reconstruction:
         target_latents = src_latents
     else:
-        target_latents = tgt_latents
+        tgt_pixels = batch["target_image"].to(device=device, dtype=vae_dtype)
+        target_latents = (
+            vae.encode(tgt_pixels).latent_dist.sample() * vae.config.scaling_factor
+        )
     x0_loss = F.mse_loss(pred_x0.float(), target_latents.float(), reduction="none")
     if snr_weights is not None:
         return (x0_loss.mean(dim=list(range(1, pred_x0.ndim))) * snr_weights).mean()

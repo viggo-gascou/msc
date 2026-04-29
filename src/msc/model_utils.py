@@ -16,6 +16,7 @@ from diffusers.schedulers import (
     PNDMScheduler,
 )
 from huggingface_hub import hf_hub_download
+from peft import LoraConfig
 from torch import nn
 from transformers import CLIPTextModel, CLIPTokenizer
 
@@ -25,7 +26,7 @@ from .au_adapter import (
     load_ip_adapter_weights,
     setup_unet_processors,
 )
-from .config import IPAdapterConfig, Params
+from .config import IPAdapterConfig, LoraParams, Params
 
 
 def load_model(
@@ -156,8 +157,9 @@ def freeze_model_layers(
     vae: AutoencoderKL,
     text_encoder: CLIPTextModel,
     au_procs: nn.ModuleDict,
+    lora_cfg: LoraParams,
 ) -> tuple[UNet2DConditionModel, AutoencoderKL, CLIPTextModel, nn.ModuleDict]:
-    """Freeze the layers of the given models.
+    """Freeze the layers of the given models, optionally adding LoRA to the UNet.
 
     Args:
         unet:
@@ -168,6 +170,9 @@ def freeze_model_layers(
             The text encoder model.
         au_procs:
             The AU projection modules.
+        lora_cfg:
+            LoRA configuration. If ``lora_cfg.enabled`` is True, LoRA adapters
+            are injected into the UNet attention layers before freezing.
 
     Returns:
         The frozen models.
@@ -178,6 +183,15 @@ def freeze_model_layers(
     if unet.encoder_hid_proj is not None:
         for p in unet.encoder_hid_proj.parameters():
             p.requires_grad = False
+
+    if lora_cfg.enabled:
+        lora_config = LoraConfig(
+            r=lora_cfg.rank,
+            lora_alpha=lora_cfg.alpha if lora_cfg.alpha is not None else lora_cfg.rank,
+            target_modules=["to_k", "to_q", "to_v", "to_out.0"],
+            lora_dropout=lora_cfg.dropout,
+        )
+        unet.add_adapter(adapter_config=lora_config, adapter_name="unet")
 
     # Unfreeze AU projection weights only
     for proc in au_procs.values():
