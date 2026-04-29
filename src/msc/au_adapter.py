@@ -61,7 +61,6 @@ class AUEncoder(nn.Module):
         self.num_aus = num_aus
         self.num_tokens = num_tokens
         self.dim = dim
-        self.register_buffer("au_scale", torch.tensor(AU_SCALE[:num_aus]))
         self.mlp = nn.Sequential(
             nn.Linear(in_features=num_aus, out_features=hidden),
             nn.LayerNorm(hidden),
@@ -83,7 +82,6 @@ class AUEncoder(nn.Module):
         Returns:
             Conditioning tokens of shape (B, num_tokens, dim).
         """
-        au_values = au_values * t.cast(torch.Tensor, self.au_scale)
         projected = self.mlp(au_values)
         x = torch.cat([au_values, projected], dim=-1)  # skip connection
         x = self.to_tokens(x)

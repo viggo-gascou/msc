@@ -13,6 +13,7 @@ from torchvision.io import ImageReadMode, decode_image
 from torchvision.transforms import v2
 from torchvision.tv_tensors import Image as TVImage
 
+from ..au_adapter import AU_SCALE
 from ..config import DataloaderParams
 from ..constants import (
     BP4D_AU_COLUMN_MAP,
@@ -268,7 +269,7 @@ class BP4DDataset(VisionDataset):
         aus = torch.tensor(
             [row.get(BP4D_AU_COLUMN_MAP[col], float("nan")) for col in BP4D_AU_COLUMNS],
             dtype=torch.float32,
-        )
+        ) * torch.tensor(AU_SCALE)
 
         image = self.load_raw(subject, task, img_frame)
         if self.transform is not None:
@@ -302,7 +303,7 @@ class BP4DDataset(VisionDataset):
         target_aus = torch.tensor(
             [target_row.get(col, float("nan")) for col in BP4D_AU_COLUMNS],
             dtype=torch.float32,
-        )
+        ) * torch.tensor(AU_SCALE)
 
         face = (
             torch.from_numpy(pre_f[subject]["faces"][pos]) if self.load_face else None
