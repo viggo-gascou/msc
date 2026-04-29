@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import numpy as np
 import torch
+from diffusers.pipelines.stable_diffusion.pipeline_stable_diffusion import (
+    StableDiffusionPipeline,
+)
 from diffusers.pipelines.stable_diffusion.pipeline_stable_diffusion_img2img import (
     StableDiffusionImg2ImgPipeline,
     StableDiffusionPipelineOutput,
@@ -40,7 +43,7 @@ class AUIPAdapterPipeline(StableDiffusionImg2ImgPipeline):
     @classmethod
     def from_pipeline(
         cls,
-        pipeline: StableDiffusionImg2ImgPipeline,
+        pipeline: StableDiffusionImg2ImgPipeline | StableDiffusionPipeline,
         au_encoder: AUEncoder,
         identity_adapter: IdentityAdapter,
         face_proj: MLPProjModel,
