@@ -1,5 +1,6 @@
 """FaceID IP-Adapter + AU adapter training loop on BP4D."""
 
+from datetime import datetime
 from pathlib import Path
 
 import torch
@@ -117,7 +118,10 @@ def train(cfg: Args) -> None:
     tokenizer: CLIPTokenizer = tokenizer
 
     # Resume from checkpoint if one exists
-    checkpoint_dir = Path(params.checkpoint_dir)
+    # add date-time to checkpoint dir
+    checkpoint_dir = Path(params.checkpoint_dir) / datetime.now().strftime(
+        "%Y-%m-%d_%H-%M-%S"
+    )
     checkpoint_dir.mkdir(parents=True, exist_ok=True)
     checkpoint_path = checkpoint_dir / "checkpoint_latest.pt"
 
@@ -125,7 +129,7 @@ def train(cfg: Args) -> None:
     best_val_loss = float("inf")
     patience_counter = 0
 
-    if checkpoint_path.exists():
+    if checkpoint_path.exists() and params.resume:
         start_epoch, best_val_loss, patience_counter = load_checkpoint(
             str(checkpoint_path), au_encoder, identity_adapter, au_procs, optimizer
         )
