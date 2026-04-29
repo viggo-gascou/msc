@@ -135,3 +135,19 @@ def inference() -> None:
 
 if __name__ == "__main__":
     inference()
+
+
+# uv run inference \
+#   --output-prefix test_steps \
+#   --config-path decreased_lr/checkpoints/config.yaml \
+#   --au-adapter-path decreased_lr/best_au_adapter.safetensors \
+#   --num-inference-steps 40 \
+#   --guidance-scale 6 \
+#   --strength 0.25 \
+#   --au-scale 1.0 \
+#   --id-scale 0.9 \
+#   --prompt "frontal portrait photo, realistic skin, natural lighting" \
+#   --negative-prompt "blurry, noisy, artifacts, distorted face" \
+#   --aus-json '{"AU06":4.0,"AU12":4.0,"AU17":2.5}'
+
+

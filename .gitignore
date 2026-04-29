@@ -109,3 +109,5 @@ results/wandb/*
 # Mkdocs compiled documentation
 site/
 discar_imgs
+decreased_lr
+checkpoints/best_au_adapter.safetensors
