@@ -123,7 +123,11 @@ def forward_batch(
         elif scheduler.config.prediction_type == "v_prediction":
             snr_weights = snr_weights / (snr + 1)
 
-    alpha_t = scheduler.alphas_cumprod[timesteps].to(pred_eps).view(-1, 1, 1, 1)
+    alpha_t = (
+        scheduler.alphas_cumprod.to(timesteps.device)[timesteps]
+        .to(pred_eps)
+        .view(-1, 1, 1, 1)
+    )
     pred_x0 = (noisy_src - (1 - alpha_t).sqrt() * pred_eps) / alpha_t.sqrt()
     if params.reconstruction:
         target_latents = src_latents
