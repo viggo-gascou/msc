@@ -13,9 +13,15 @@ from diffusers import UNet2DConditionModel
 from diffusers.models.attention_processor import Attention, AttnProcessor2_0
 from safetensors.torch import load_file, save_file
 
-from .constants import BP4D_AU_COLUMNS
+from .constants import BP4D_AU_COLUMNS, BP4D_AU_INTENSITY_COLUMNS
 
 NUM_AUS: int = len(BP4D_AU_COLUMNS)  # 23
+
+# Per-AU scale: intensity AUs (0-5) are normalised to [0,1]; occurrence AUs
+# (0/1) are left unchanged so all inputs share the same scale.
+AU_SCALE: list[float] = [
+    1.0 / 5.0 if au in BP4D_AU_INTENSITY_COLUMNS else 1.0 for au in BP4D_AU_COLUMNS
+]
 
 
 class AUEncoder(nn.Module):
@@ -55,6 +61,7 @@ class AUEncoder(nn.Module):
         self.num_aus = num_aus
         self.num_tokens = num_tokens
         self.dim = dim
+        self.register_buffer("au_scale", torch.tensor(AU_SCALE[:num_aus]))
         self.mlp = nn.Sequential(
             nn.Linear(in_features=num_aus, out_features=hidden),
             nn.LayerNorm(hidden),
@@ -76,6 +83,7 @@ class AUEncoder(nn.Module):
         Returns:
             Conditioning tokens of shape (B, num_tokens, dim).
         """
+        au_values = au_values * t.cast(torch.Tensor, self.au_scale)
         projected = self.mlp(au_values)
         x = torch.cat([au_values, projected], dim=-1)  # skip connection
         x = self.to_tokens(x)
