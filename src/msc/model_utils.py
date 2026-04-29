@@ -7,7 +7,7 @@ if TYPE_CHECKING:
     from .inference_pipeline import AUIPAdapterPipeline
 
 import torch
-from diffusers import StableDiffusionPipeline
+from diffusers import StableDiffusionImg2ImgPipeline, StableDiffusionPipeline
 from diffusers.models import AutoencoderKL, UNet2DConditionModel
 from diffusers.schedulers import (
     DDIMScheduler,
@@ -110,7 +110,7 @@ def load_inference_pipeline(
     from .inference_pipeline import AUIPAdapterPipeline
 
     dtype = torch.bfloat16 if device == "cuda" else torch.float32
-    pipeline = StableDiffusionPipeline.from_pretrained(
+    pipeline = StableDiffusionImg2ImgPipeline.from_pretrained(
         params.unet_model,
         torch_dtype=dtype,
         safety_checker=None,
