@@ -12,7 +12,11 @@ from msc.model_utils import load_inference_pipeline
 
 
 def inference() -> None:
-    """Run a single AU-conditioned inference example and save the output image."""
+    """Run a single AU-conditioned inference example and save the output image.
+
+    Raises:
+        ValueError: If the subject or task is not valid.
+    """
     parser = argparse.ArgumentParser()
     parser.add_argument("--subject", type=str, default="F001")
     parser.add_argument("--task", type=str, default="T1")
@@ -31,7 +35,7 @@ def inference() -> None:
         "--aus-json",
         type=str,
         default='{"AU12": 1.0, "AU06": 2.0}',
-        help="JSON dict of AU values, e.g. '{\"AU12\": 1.5, \"AU06\": 2.0}'",
+        help='JSON dict of AU values, e.g. \'{"AU12": 1.5, "AU06": 2.0}\'',
     )
     parser.add_argument(
         "--output-prefix",
@@ -63,10 +67,7 @@ def inference() -> None:
     cfg = OmegaConf.load(args.config_path)
 
     pipeline = load_inference_pipeline(
-        cfg.parameters,
-        cfg.ip_adapter,
-        args.au_adapter_path,
-        device="cpu",
+        cfg.parameters, cfg.ip_adapter, args.au_adapter_path, device="cpu"
     )
 
     df = pd.read_parquet("data/BP4D/Sample/bp4d_index.parquet")
