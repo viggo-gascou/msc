@@ -1,46 +1,137 @@
 """Inference script for the AU IP Adapter model."""
 
-import h5py
+import argparse
+import json
+
 import pandas as pd
-import torch
 from omegaconf import OmegaConf
 from PIL import Image
 
-from msc.constants import BP4D_AU_COLUMNS, BP4D_SEQUENCES_DIR
+from msc.constants import BP4D_AU_COLUMN_MAP, BP4D_AU_COLUMNS, BP4D_SEQUENCES_DIR
 from msc.model_utils import load_inference_pipeline
 
-cfg = OmegaConf.load("checkpoints/config.yaml")
 
-pipeline = load_inference_pipeline(
-    cfg.parameters,
-    cfg.ip_adapter,
-    "checkpoints/best_au_adapter.safetensors",
-    device="cpu",
-)
+def inference() -> None:
+    """Run a single AU-conditioned inference example and save the output image."""
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--subject", type=str, default="F001")
+    parser.add_argument("--task", type=str, default="T1")
+    parser.add_argument(
+        "--prompt",
+        type=str,
+        default="portrait photo, frontal face, natural lighting, realistic skin",
+    )
+    parser.add_argument("--negative-prompt", type=str, default="")
+    parser.add_argument("--num-inference-steps", type=int, default=40)
+    parser.add_argument("--guidance-scale", type=float, default=5.0)
+    parser.add_argument("--strength", type=float, default=0.15)
+    parser.add_argument("--au-scale", type=float, default=0.6)
+    parser.add_argument("--id-scale", type=float, default=0.9)
+    parser.add_argument(
+        "--aus-json",
+        type=str,
+        default='{"AU12": 1.0, "AU06": 2.0}',
+        help="JSON dict of AU values, e.g. '{\"AU12\": 1.5, \"AU06\": 2.0}'",
+    )
+    parser.add_argument(
+        "--output-prefix",
+        type=str,
+        default="inference",
+        help="Prefix for saved image files.",
+    )
+    parser.add_argument(
+        "--config-path",
+        type=str,
+        default="checkpoints/config.yaml",
+        help="Path to config.yaml used for loading inference components.",
+    )
+    parser.add_argument(
+        "--au-adapter-path",
+        type=str,
+        default="checkpoints/best_au_adapter.safetensors",
+        help="Path to AU adapter safetensors checkpoint.",
+    )
+    args = parser.parse_args()
 
-df = pd.read_parquet("data/BP4D/Sample/bp4d_index.parquet")
+    try:
+        aus = json.loads(args.aus_json)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"Invalid --aus-json value: {args.aus_json}") from exc
+    if not isinstance(aus, dict):
+        raise ValueError("--aus-json must decode to a JSON object/dict")
 
-subject = "F001"
-task = "T1"
-row = df[(df["subject"] == subject) & (df["task"] == task)].iloc[0]
+    cfg = OmegaConf.load(args.config_path)
 
-source_image = Image.open(
-    BP4D_SEQUENCES_DIR / subject / task / f"{int(row['frame']):04d}.jpg"
-)
+    pipeline = load_inference_pipeline(
+        cfg.parameters,
+        cfg.ip_adapter,
+        args.au_adapter_path,
+        device="cpu",
+    )
 
-with h5py.File("data/BP4D/Sample/Embeddings/T1.h5", "r") as f:
-    arcface = torch.from_numpy(f[subject]["arcface"][0]).unsqueeze(0)  # (1, 512)
+    df = pd.read_parquet("data/BP4D/Sample/bp4d_index.parquet")
 
-aus = torch.tensor(
-    [row.get(col, 0.0) for col in BP4D_AU_COLUMNS], dtype=torch.float32
-).unsqueeze(0)  # (1, 23)
+    subject = args.subject
+    task = args.task
+    subset = df[(df["subject"] == subject) & (df["task"] == task)].copy()
+    row = subset.iloc[0]
+
+    source_aus = {
+        au: float(row.get(BP4D_AU_COLUMN_MAP[au], 0.0)) for au in BP4D_AU_COLUMNS
+    }
+    requested_aus = {au: float(aus.get(au, 0.0)) for au in BP4D_AU_COLUMNS}
+
+    au_cols = [BP4D_AU_COLUMN_MAP[au] for au in BP4D_AU_COLUMNS]
+    target_matrix = subset[au_cols].fillna(0.0).to_numpy(dtype=float)
+    requested_vec = [requested_aus[au] for au in BP4D_AU_COLUMNS]
+    diffs = ((target_matrix - requested_vec) ** 2).sum(axis=1)
+    target_row = subset.iloc[int(diffs.argmin())]
+
+    # AU frame numbers are 1-based, image filenames are 0-based.
+    source_image = Image.open(
+        BP4D_SEQUENCES_DIR / subject / task / f"{int(row['frame']) - 1:04d}.jpg"
+    )
+    target_image = Image.open(
+        BP4D_SEQUENCES_DIR / subject / task / f"{int(target_row['frame']) - 1:04d}.jpg"
+    )
+
+    output = pipeline(
+        prompt=args.prompt,
+        negative_prompt=args.negative_prompt,
+        aus=aus,
+        image=source_image,
+        guidance_scale=args.guidance_scale,
+        num_inference_steps=args.num_inference_steps,
+        strength=args.strength,
+        au_scale=args.au_scale,
+        id_scale=args.id_scale,
+    )
+    generated = output.images[0]
+
+    single_out = f"{args.output_prefix}_{subject}.png"
+    generated.save(single_out)
+
+    comparison = Image.new("RGB", (source_image.width * 3, source_image.height))
+    comparison.paste(source_image.convert("RGB"), (0, 0))
+    comparison.paste(generated.convert("RGB"), (source_image.width, 0))
+    comparison.paste(target_image.convert("RGB"), (source_image.width * 2, 0))
+    comparison_out = f"{args.output_prefix}_{subject}_comparison.png"
+    comparison.save(comparison_out)
+
+    target_aus = {
+        au: float(target_row.get(BP4D_AU_COLUMN_MAP[au], 0.0)) for au in BP4D_AU_COLUMNS
+    }
+    print("Saved:")
+    print(f"  generated:  {single_out}")
+    print(f"  comparison: {comparison_out} (input | generated | target)")
+    print("AU scores:")
+    print("  source:")
+    print("   ", source_aus)
+    print("  requested:")
+    print("   ", requested_aus)
+    print("  target (closest in dataset):")
+    print("   ", target_aus)
 
 
-output = pipeline(
-    prompt="",
-    aus={"AU12": 1.0, "AU06": 2.0},
-    arcface_embeds=arcface,
-    image=source_image,
-    guidance_scale=1.0,
-)
-output.images[0].save(f"inference_{subject}.png")
+if __name__ == "__main__":
+    inference()

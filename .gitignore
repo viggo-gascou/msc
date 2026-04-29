@@ -108,3 +108,4 @@ results/wandb/*
 
 # Mkdocs compiled documentation
 site/
+discar_imgs
