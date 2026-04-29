@@ -150,5 +150,3 @@ if __name__ == "__main__":
 #   --prompt "frontal portrait photo, realistic skin, natural lighting" \
 #   --negative-prompt "blurry, noisy, artifacts, distorted face" \
 #   --aus-json '{"AU06":4.0,"AU12":4.0,"AU17":2.5}'
-
-
