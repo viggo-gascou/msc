@@ -59,6 +59,10 @@ def forward_batch(
     else:
         au_values = batch["target_aus"].to(device)
 
+    # Replace NaN AU values (uncoded frames) with 0 — "AU not active".
+    # NaN would propagate through au_encoder and poison the entire forward pass.
+    au_values = au_values.nan_to_num(0.0)
+
     # Per-sample CFG dropout: zero out AU values with probability cfg_dropout_prob
     # so the model learns both conditional and unconditional distributions.
     # Only applied during training — val/test always evaluate full conditioning.

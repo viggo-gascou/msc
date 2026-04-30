@@ -301,7 +301,10 @@ class BP4DDataset(VisionDataset):
         if self.transform is not None:
             target_image = self.transform(target_image)
         target_aus = torch.tensor(
-            [target_row.get(col, float("nan")) for col in BP4D_AU_COLUMNS],
+            [
+                target_row.get(BP4D_AU_COLUMN_MAP[col], float("nan"))
+                for col in BP4D_AU_COLUMNS
+            ],
             dtype=torch.float32,
         ) * torch.tensor(AU_SCALE)
 
