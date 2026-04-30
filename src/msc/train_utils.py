@@ -345,6 +345,7 @@ def evaluate(
 
 def save_checkpoint(
     path: str,
+    unet: UNet2DConditionModel,
     au_encoder: AUEncoder,
     identity_adapter: IdentityAdapter,
     au_procs: nn.ModuleDict,
@@ -360,6 +361,7 @@ def save_checkpoint(
 
     Args:
         path: Destination path for the checkpoint file.
+        unet: UNet model (LoRA weights extracted if present).
         au_encoder: AU encoder module.
         identity_adapter: Identity adapter module.
         au_procs: AU attention processors (ModuleDict).
@@ -373,10 +375,12 @@ def save_checkpoint(
         for k, v in au_procs.state_dict().items()
         if not k.endswith(("to_k_ip.weight", "to_v_ip.weight"))
     }
+    lora_sd = {k: v for k, v in unet.state_dict().items() if "lora_" in k}
     flat: dict[str, torch.Tensor] = {}
     flat.update(prefixed(au_encoder.state_dict(), "au_encoder"))
     flat.update(prefixed(identity_adapter.state_dict(), "identity_adapter"))
     flat.update(prefixed(procs_sd, "au_procs"))
+    flat.update(prefixed(lora_sd, "lora"))
 
     torch.save(
         {
@@ -392,6 +396,7 @@ def save_checkpoint(
 
 def load_checkpoint(
     path: str,
+    unet: UNet2DConditionModel,
     au_encoder: AUEncoder,
     identity_adapter: IdentityAdapter,
     au_procs: nn.ModuleDict,
@@ -404,6 +409,7 @@ def load_checkpoint(
 
     Args:
         path: Path to the checkpoint file produced by save_checkpoint.
+        unet: UNet model (LoRA weights restored if present in checkpoint).
         au_encoder: AU encoder to restore weights into.
         identity_adapter: Identity adapter to restore weights into.
         au_procs: AU processors to restore weights into.
@@ -422,6 +428,9 @@ def load_checkpoint(
     au_encoder.load_state_dict(_strip("au_encoder"))
     identity_adapter.load_state_dict(_strip("identity_adapter"))
     au_procs.load_state_dict(_strip("au_procs"), strict=False)
+    lora_sd = _strip("lora")
+    if lora_sd:
+        unet.load_state_dict(lora_sd, strict=False)
     optimizer.load_state_dict(checkpoint["optimizer"])
 
     return (

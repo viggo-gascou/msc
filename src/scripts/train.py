@@ -131,7 +131,12 @@ def train(cfg: Args) -> None:
 
     if checkpoint_path.exists() and params.resume:
         start_epoch, best_val_loss, patience_counter = load_checkpoint(
-            str(checkpoint_path), au_encoder, identity_adapter, au_procs, optimizer
+            str(checkpoint_path),
+            unet,
+            au_encoder,
+            identity_adapter,
+            au_procs,
+            optimizer,
         )
         start_epoch += 1  # resume from the next epoch
         logger.info(
@@ -186,10 +191,11 @@ def train(cfg: Args) -> None:
             patience_counter = 0
             if accelerator.is_main_process:
                 save_au_adapter(
+                    accelerator.unwrap_model(model=unet),
                     accelerator.unwrap_model(model=au_encoder),
                     accelerator.unwrap_model(model=identity_adapter),
                     au_procs,
-                    "best_au_adapter.safetensors",
+                    checkpoint_dir / "best_au_adapter.safetensors",
                 )
                 logger.info(f"Saved best model (val loss {best_val_loss:.4f})")
         else:
@@ -201,8 +207,9 @@ def train(cfg: Args) -> None:
         if (epoch + 1) % params.checkpoint_every == 0 and accelerator.is_main_process:
             save_checkpoint(
                 str(checkpoint_path),
-                au_encoder,
-                identity_adapter,
+                accelerator.unwrap_model(model=unet),
+                accelerator.unwrap_model(model=au_encoder),
+                accelerator.unwrap_model(model=identity_adapter),
                 au_procs,
                 optimizer,
                 epoch,

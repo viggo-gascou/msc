@@ -516,6 +516,7 @@ def prefixed(
 
 
 def save_au_adapter(
+    unet: UNet2DConditionModel,
     au_encoder: AUEncoder,
     identity_adapter: IdentityAdapter,
     au_procs: nn.ModuleDict,
@@ -525,8 +526,10 @@ def save_au_adapter(
 
     IP-Adapter weights (`to_k_ip`, `to_v_ip`) are excluded — they are
     pretrained and loaded separately via `load_ip_adapter_weights`.
+    LoRA weights are included if present on the UNet.
 
     Args:
+        unet: UNet model (LoRA weights extracted if present).
         au_encoder: Trained AUEncoder.
         identity_adapter: Trained IdentityAdapter.
         au_procs: Trained AUIPAttnProcessors (as ModuleDict).
@@ -537,10 +540,12 @@ def save_au_adapter(
         for k, v in au_procs.state_dict().items()
         if not k.endswith(("to_k_ip.weight", "to_v_ip.weight"))
     }
+    lora_sd = {k: v for k, v in unet.state_dict().items() if "lora_" in k}
     flat: dict[str, torch.Tensor] = {}
     flat.update(prefixed(au_encoder.state_dict(), "au_encoder"))
     flat.update(prefixed(identity_adapter.state_dict(), "identity_adapter"))
     flat.update(prefixed(procs_sd, "au_procs"))
+    flat.update(prefixed(lora_sd, "lora"))
     save_file(tensors=flat, filename=path)
 
 
@@ -580,5 +585,8 @@ def load_au_adapter(
     au_procs = setup_unet_processors(unet)
     load_ip_adapter_weights(unet, ip_adapter_path)
     au_procs.load_state_dict(_strip(flat, "au_procs"), strict=False)
+    lora_sd = _strip(flat, "lora")
+    if lora_sd:
+        unet.load_state_dict(lora_sd, strict=False)
 
     return au_encoder, identity_adapter, au_procs
