@@ -111,18 +111,6 @@ def train(cfg: Args) -> None:
         val_loader.dataset.set_min_target_distance(params.min_frame_distance)
         test_loader.dataset.set_min_target_distance(params.min_frame_distance)
 
-    unet, au_encoder, identity_adapter, optimizer, train_loader = accelerator.prepare(
-        unet, au_encoder, identity_adapter, optimizer, train_loader
-    )
-
-    tokenizer: CLIPTokenizer = tokenizer
-
-    checkpoint_dir = Path(params.checkpoint_dir) / datetime.now().strftime(
-        "%Y-%m-%d_%H-%M-%S"
-    )
-    checkpoint_dir.mkdir(parents=True, exist_ok=True)
-    checkpoint_path = checkpoint_dir / "checkpoint_latest.pt"
-
     start_epoch = 0
     best_val_loss = float("inf")
     patience_counter = 0
@@ -136,6 +124,18 @@ def train(cfg: Args) -> None:
             f"Resumed from {params.resume_from}: epoch {start_epoch}, "
             f"best val loss {best_val_loss:.4f}"
         )
+
+    unet, au_encoder, identity_adapter, optimizer, train_loader = accelerator.prepare(
+        unet, au_encoder, identity_adapter, optimizer, train_loader
+    )
+
+    tokenizer: CLIPTokenizer = tokenizer
+
+    checkpoint_dir = Path(params.checkpoint_dir) / datetime.now().strftime(
+        "%Y-%m-%d_%H-%M-%S"
+    )
+    checkpoint_dir.mkdir(parents=True, exist_ok=True)
+    checkpoint_path = checkpoint_dir / "checkpoint_latest.pt"
 
     for epoch in tqdm(range(start_epoch, params.epochs), desc="Epochs", unit="epoch"):
         if not params.reconstruction:
