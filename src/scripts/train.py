@@ -117,8 +117,6 @@ def train(cfg: Args) -> None:
 
     tokenizer: CLIPTokenizer = tokenizer
 
-    # Resume from checkpoint if one exists
-    # add date-time to checkpoint dir
     checkpoint_dir = Path(params.checkpoint_dir) / datetime.now().strftime(
         "%Y-%m-%d_%H-%M-%S"
     )
@@ -129,18 +127,13 @@ def train(cfg: Args) -> None:
     best_val_loss = float("inf")
     patience_counter = 0
 
-    if checkpoint_path.exists() and params.resume:
+    if params.resume_from is not None:
         start_epoch, best_val_loss, patience_counter = load_checkpoint(
-            str(checkpoint_path),
-            unet,
-            au_encoder,
-            identity_adapter,
-            au_procs,
-            optimizer,
+            params.resume_from, unet, au_encoder, identity_adapter, au_procs, optimizer
         )
         start_epoch += 1  # resume from the next epoch
         logger.info(
-            f"Resumed from checkpoint: epoch {start_epoch}, "
+            f"Resumed from {params.resume_from}: epoch {start_epoch}, "
             f"best val loss {best_val_loss:.4f}"
         )
 

@@ -129,8 +129,10 @@ class Params:
             itself conditioned on source AUs) instead of the transfer objective
             (denoise source toward a different target frame). Disables the frame
             distance curriculum. Defaults to False.
-        resume:
-            If True, resume training from the latest checkpoint. Defaults to False.
+        resume_from:
+            Path to a checkpoint .pt file to resume training from. When set,
+            training resumes from that checkpoint's epoch and optimizer state.
+            Defaults to None (start from scratch).
     """
 
     optimizer: OptimizerParams
@@ -153,7 +155,7 @@ class Params:
     max_frame_distance: int = 50
     min_frame_distance: int = 5
     reconstruction: bool = False
-    resume: bool = False
+    resume_from: str | None = None
 
 
 @dataclass
