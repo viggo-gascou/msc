@@ -423,7 +423,11 @@ def load_checkpoint(
 
     def _strip(prefix: str) -> dict[str, torch.Tensor]:
         n = len(prefix) + 1
-        return {k[n:]: v for k, v in flat.items() if k.startswith(prefix + ".")}
+        return {
+            k[n:].removeprefix("module."): v
+            for k, v in flat.items()
+            if k.startswith(prefix + ".")
+        }
 
     au_encoder.load_state_dict(_strip("au_encoder"))
     identity_adapter.load_state_dict(_strip("identity_adapter"))
