@@ -4,6 +4,7 @@ import argparse
 import json
 
 import pandas as pd
+import torch
 from omegaconf import OmegaConf
 from PIL import Image
 
@@ -67,7 +68,10 @@ def inference() -> None:
     cfg = OmegaConf.load(args.config_path)
 
     pipeline = load_inference_pipeline(
-        cfg.parameters, cfg.ip_adapter, args.au_adapter_path, device="cpu"
+        cfg.parameters,
+        cfg.ip_adapter,
+        args.au_adapter_path,
+        device="cuda" if torch.cuda.is_available() else "cpu",
     )
 
     df = pd.read_parquet("data/BP4D/Sample/bp4d_index.parquet")
