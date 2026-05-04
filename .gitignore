@@ -121,6 +121,9 @@ checkpoints/best_au_adapter.safetensors
 *.bmp
 *.tiff
 
+# generated outputs
+output_data/images/
+
 # any model files
 *.safetensors
 *.pt
