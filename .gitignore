@@ -108,5 +108,20 @@ results/wandb/*
 
 # Mkdocs compiled documentation
 site/
+
+# not sure
 discar_imgsdecreased_lr
 checkpoints/best_au_adapter.safetensors
+
+# any image files
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.bmp
+*.tiff
+
+# any model files
+*.safetensors
+*.pt
+*.pth

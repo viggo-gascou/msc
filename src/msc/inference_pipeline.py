@@ -13,7 +13,7 @@ from diffusers.pipelines.stable_diffusion.pipeline_stable_diffusion_img2img impo
 )
 from PIL import Image
 
-from .au_adapter import AUEncoder, IdentityAdapter, MLPProjModel
+from .au_adapter import AU_SCALE, AUEncoder, IdentityAdapter, MLPProjModel
 from .constants import BP4D_AU_COLUMNS
 from .face_embeddings.arcface import ArcFaceEmbedding
 from .torch_utils import tensor_to_bgr
@@ -117,6 +117,7 @@ class AUIPAdapterPipeline(StableDiffusionImg2ImgPipeline):
         if isinstance(aus, dict):
             values = [aus.get(col, 0.0) for col in BP4D_AU_COLUMNS]
             aus = torch.tensor(values, dtype=torch.float32).unsqueeze(0)
+            aus = aus * torch.tensor(AU_SCALE, dtype=torch.float32)
         aus = aus.to(arcface_embeds.device)
         au_tokens = self.au_encoder.encode(aus)
         uncond_au, cond_au = au_tokens.chunk(2, dim=0)

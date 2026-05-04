@@ -582,10 +582,27 @@ def load_au_adapter(
     identity_adapter = IdentityAdapter()
     identity_adapter.load_state_dict(_strip(flat, "identity_adapter"))
 
+    # Inject LoRA structure before loading weights — load_state_dict with
+    # strict=False silently drops keys that don't exist in the model, so the
+    # adapter must be set up first. Rank is inferred from the checkpoint.
+    lora_sd = _strip(flat, "lora")
+    if lora_sd:
+        from peft import LoraConfig
+
+        lora_a_key = next(k for k in lora_sd if "lora_A" in k)
+        rank = lora_sd[lora_a_key].shape[0]
+        unet.add_adapter(
+            adapter_config=LoraConfig(
+                r=rank,
+                lora_alpha=rank,
+                target_modules=["to_k", "to_q", "to_v", "to_out.0"],
+            ),
+            adapter_name="unet",
+        )
+
     au_procs = setup_unet_processors(unet)
     load_ip_adapter_weights(unet, ip_adapter_path)
     au_procs.load_state_dict(_strip(flat, "au_procs"), strict=False)
-    lora_sd = _strip(flat, "lora")
     if lora_sd:
         unet.load_state_dict(lora_sd, strict=False)
 

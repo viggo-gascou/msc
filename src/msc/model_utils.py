@@ -81,7 +81,11 @@ def load_model(
 
 
 def load_inference_pipeline(
-    params: Params, ip_cfg: IPAdapterConfig, au_ckpt_path: str, device: str = "cuda"
+    params: Params,
+    ip_cfg: IPAdapterConfig,
+    au_ckpt_path: str,
+    device: str = "cuda",
+    load_arcface: bool = True,
 ) -> "AUIPAdapterPipeline":
     """Load a trained AUIPAdapterPipeline ready for inference.
 
@@ -99,6 +103,9 @@ def load_inference_pipeline(
         device:
             Target device string (e.g. `"cuda"` or `"cpu"`). Weights are
             loaded in bfloat16 on CUDA and float32 on CPU.
+        load_arcface:
+            If False, skip loading the ArcFace extractor (useful when
+            arcface embeddings are supplied directly at inference time).
 
     Returns:
         `AUIPAdapterPipeline` with all weights loaded.
@@ -106,8 +113,6 @@ def load_inference_pipeline(
     Raises:
         ValueError: If the base pipeline fails to load.
     """
-    from .enums import ONNXProvider
-    from .face_embeddings.arcface import ArcFaceEmbedding
     from .inference_pipeline import AUIPAdapterPipeline
 
     dtype = torch.bfloat16 if device == "cuda" else torch.float32
@@ -140,15 +145,27 @@ def load_inference_pipeline(
     # in the UNet from load_au_adapter above).
     face_proj = load_ip_adapter_weights(pipeline.unet, ip_adapter_path)
 
-    ctx_id = 0 if device == "cuda" else -1
-    arcface_extractor = ArcFaceEmbedding(
-        providers=[ONNXProvider.CUDA, ONNXProvider.CPU], ctx_id=ctx_id
-    )
+    arcface_extractor = None
+    if load_arcface:
+        from .enums import ONNXProvider
+        from .face_embeddings.arcface import ArcFaceEmbedding
+
+        ctx_id = 0 if device == "cuda" else -1
+        arcface_extractor = ArcFaceEmbedding(
+            providers=[ONNXProvider.CUDA, ONNXProvider.CPU], ctx_id=ctx_id
+        )
 
     auip_pipeline = AUIPAdapterPipeline.from_pipeline(
         pipeline, au_encoder, identity_adapter, face_proj, arcface_extractor
     )
     auip_pipeline.to(device)
+    # diffusers' .to() only moves registered pipeline components; move the
+    # custom modules explicitly so all tensors land on the same device/dtype.
+    auip_pipeline.au_encoder = auip_pipeline.au_encoder.to(device=device, dtype=dtype)
+    auip_pipeline.identity_adapter = auip_pipeline.identity_adapter.to(
+        device=device, dtype=dtype
+    )
+    auip_pipeline.face_proj = auip_pipeline.face_proj.to(device=device, dtype=dtype)
     return auip_pipeline
 
 
