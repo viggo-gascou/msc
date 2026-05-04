@@ -34,6 +34,8 @@ BP4D_DATA_DIR = (
     DATA_DIR / "BP4D" if HPC_DATA_DIR.exists() else DATA_DIR / "BP4D" / "Sample"
 )
 BP4D_INDEX_PATH = BP4D_DATA_DIR / "bp4d_index.parquet"
+BP4D_VAE_LATENTS_PATH = BP4D_DATA_DIR / "vae_latents.h5"
+
 # On HPC use the proper split indices; locally fall back to the single sample index.
 BP4D_TRAIN_INDEX_PATH = (
     BP4D_INDEX_PATH.with_stem("bp4d_train_index")
