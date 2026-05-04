@@ -10,6 +10,7 @@ from PIL import Image
 
 from msc.constants import BP4D_AU_COLUMN_MAP, BP4D_AU_COLUMNS, BP4D_SEQUENCES_DIR
 from msc.model_utils import load_inference_pipeline
+from pathlib import Path
 
 
 def inference() -> None:
@@ -113,14 +114,17 @@ def inference() -> None:
     )
     generated = output.images[0]
 
-    single_out = f"{args.output_prefix}_{subject}.png"
+    out_dir = Path("output_data/images")
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    single_out = out_dir / f"{args.output_prefix}_{subject}.png"
     generated.save(single_out)
 
     comparison = Image.new("RGB", (source_image.width * 3, source_image.height))
     comparison.paste(source_image.convert("RGB"), (0, 0))
     comparison.paste(generated.convert("RGB"), (source_image.width, 0))
     comparison.paste(target_image.convert("RGB"), (source_image.width * 2, 0))
-    comparison_out = f"{args.output_prefix}_{subject}_comparison.png"
+    comparison_out = out_dir / f"{args.output_prefix}_{subject}_comparison.png"
     comparison.save(comparison_out)
 
     target_aus = {
