@@ -89,6 +89,8 @@ class AUIPAdapterPipeline(StableDiffusionImg2ImgPipeline):
             Face tokens of shape (B, num_tokens, dim) without CFG or
             (2B, num_tokens, dim) with CFG — uncond first, cond second.
         """
+        dtype = next(self.face_proj.parameters()).dtype
+        arcface_embeds = arcface_embeds.to(dtype=dtype)
         id_tokens = self.face_proj(arcface_embeds)
         if do_cfg:
             uncond_id_tokens = self.face_proj(torch.zeros_like(arcface_embeds))
@@ -114,11 +116,13 @@ class AUIPAdapterPipeline(StableDiffusionImg2ImgPipeline):
         Returns:
             AU tokens of shape (2B, num_au_tokens, dim) — uncond first, cond second.
         """
+        dtype = next(self.au_encoder.parameters()).dtype
         if isinstance(aus, dict):
             values = [aus.get(col, 0.0) for col in BP4D_AU_COLUMNS]
             aus = torch.tensor(values, dtype=torch.float32).unsqueeze(0)
             aus = aus * torch.tensor(AU_SCALE, dtype=torch.float32)
-        aus = aus.to(arcface_embeds.device)
+        aus = aus.to(device=arcface_embeds.device, dtype=dtype)
+        arcface_embeds = arcface_embeds.to(dtype=dtype)
         au_tokens = self.au_encoder.encode(aus)
         uncond_au, cond_au = au_tokens.chunk(2, dim=0)
         cond_au = self.identity_adapter(cond_au, arcface_embeds)
