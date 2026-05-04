@@ -166,6 +166,11 @@ def load_inference_pipeline(
         device=device, dtype=dtype
     )
     auip_pipeline.face_proj = auip_pipeline.face_proj.to(device=device, dtype=dtype)
+    # AUIPAttnProcessor weights (to_k_ip, to_v_ip, to_k_au, to_v_au) are not
+    # registered as UNet submodules by diffusers, so unet.to() misses them.
+    for proc in auip_pipeline.unet.attn_processors.values():
+        if isinstance(proc, nn.Module):
+            proc.to(device=device, dtype=dtype)
     return auip_pipeline
 
 
