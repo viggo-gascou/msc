@@ -120,7 +120,7 @@ def inference() -> None:
     single_out = out_dir / f"{args.output_prefix}_{subject}.png"
     generated.save(single_out)
 
-    comparison = Image.new("RGB", (source_image.width , source_image.height))
+    comparison = Image.new("RGB", (source_image.width * 2 , source_image.height))
     comparison.paste(source_image.convert("RGB"), (0, 0))
     comparison.paste(generated.convert("RGB"), (source_image.width, 0))
     comparison_out = out_dir / f"{args.output_prefix}_{subject}_comparison.png"
