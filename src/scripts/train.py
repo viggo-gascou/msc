@@ -108,8 +108,8 @@ def train(cfg: Args) -> None:
     if not params.reconstruction:
         # Fix val/test at the end-of-curriculum distance so they are comparable
         # to late-stage training difficulty, not the easier random-pair baseline.
-        val_loader.dataset.set_min_target_distance(params.min_frame_distance)
-        test_loader.dataset.set_min_target_distance(params.min_frame_distance)
+        val_loader.dataset.set_min_au_distance(params.min_au_distance)
+        test_loader.dataset.set_min_au_distance(params.min_au_distance)
 
     start_epoch = 0
     best_val_loss = float("inf")
@@ -139,13 +139,10 @@ def train(cfg: Args) -> None:
 
     for epoch in tqdm(range(start_epoch, params.epochs), desc="Epochs", unit="epoch"):
         if not params.reconstruction:
-            dist = round(
-                params.max_frame_distance
-                - (params.max_frame_distance - params.min_frame_distance)
-                * epoch
-                / max(params.epochs - 1, 1)
-            )
-            train_loader.dataset.set_min_target_distance(dist)
+            au_dist = params.max_au_distance - (
+                params.max_au_distance - params.min_au_distance
+            ) * epoch / max(params.epochs - 1, 1)
+            train_loader.dataset.set_min_au_distance(au_dist)
 
         train_loss = train_one_epoch(
             unet,
@@ -177,7 +174,9 @@ def train(cfg: Args) -> None:
             params=params,
         )
         logger.info(f"epoch {epoch + 1} | train {train_loss:.4f} | val {val_loss:.4f}")
-        accelerator.log({"train/loss": train_loss, "val/loss": val_loss})
+        accelerator.log(
+            {"train/loss": train_loss, "val/loss": val_loss, "epoch": epoch + 1}
+        )
 
         if val_loss < best_val_loss:
             best_val_loss = val_loss

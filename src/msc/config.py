@@ -152,8 +152,8 @@ class Params:
     snr_gamma: float = 5.0
     cfg_dropout_prob: float = 0.1
     gradient_checkpointing: bool = False
-    max_au_distance: float = 2.0
-    min_au_distance: float = 0.1
+    max_au_distance: float = 3.6
+    min_au_distance: float = 1.0
     reconstruction: bool = False
     resume_from: str | None = None
 
