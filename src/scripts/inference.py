@@ -2,6 +2,7 @@
 
 import argparse
 import json
+from pathlib import Path
 
 import pandas as pd
 import torch
@@ -10,7 +11,6 @@ from PIL import Image
 
 from msc.constants import BP4D_AU_COLUMN_MAP, BP4D_AU_COLUMNS, BP4D_SEQUENCES_DIR
 from msc.model_utils import load_inference_pipeline
-from pathlib import Path
 
 
 def inference() -> None:
@@ -97,9 +97,6 @@ def inference() -> None:
     source_image = Image.open(
         BP4D_SEQUENCES_DIR / subject / task / f"{int(row['frame']) - 1:04d}.jpg"
     )
-    target_image = Image.open(
-        BP4D_SEQUENCES_DIR / subject / task / f"{int(target_row['frame']) - 1:04d}.jpg"
-    )
 
     output = pipeline(
         prompt=args.prompt,
@@ -120,7 +117,7 @@ def inference() -> None:
     single_out = out_dir / f"{args.output_prefix}_{subject}.png"
     generated.save(single_out)
 
-    comparison = Image.new("RGB", (source_image.width * 2 , source_image.height))
+    comparison = Image.new("RGB", (source_image.width * 2, source_image.height))
     comparison.paste(source_image.convert("RGB"), (0, 0))
     comparison.paste(generated.convert("RGB"), (source_image.width, 0))
     comparison_out = out_dir / f"{args.output_prefix}_{subject}_comparison.png"
