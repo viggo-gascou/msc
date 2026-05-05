@@ -3,9 +3,11 @@
 from collections import defaultdict
 from pathlib import Path
 
+import h5py
+import numpy as np
 import pandas as pd
 
-from ..constants import BP4D_INDEX_PATH
+from ..constants import BP4D_AU_DISTANCES_PATH, BP4D_INDEX_PATH
 
 
 def load_index(path: Path | None = None) -> pd.DataFrame:
@@ -24,6 +26,34 @@ def load_index(path: Path | None = None) -> pd.DataFrame:
     if not p.exists():
         raise FileNotFoundError(f"Index not found: {p} — run build_bp4d_index.py first")
     return pd.read_parquet(p)
+
+
+def load_au_distances(subject: str, task: str, path: Path | None = None) -> np.ndarray:
+    """Load the precomputed AU distance matrix for a single sequence.
+
+    Args:
+        subject:
+            Subject ID (e.g. 'F001').
+        task:
+            Task ID (e.g. 'T1').
+        path:
+            Override for the HDF5 path. Defaults to BP4D_AU_DISTANCES_PATH.
+
+    Returns:
+        Float32 array of shape (N, N) — pairwise L1 AU distances between all
+        coded frames in the sequence, in ascending frame order.
+
+    Raises:
+        FileNotFoundError:
+            If the distances file has not been built yet.
+    """
+    p = path or BP4D_AU_DISTANCES_PATH
+    if not p.exists():
+        raise FileNotFoundError(
+            f"AU distances not found: {p} — run precompute_au_distances.py first"
+        )
+    with h5py.File(p, "r") as f:
+        return f[subject][task][:]
 
 
 def resolve_frame_path(

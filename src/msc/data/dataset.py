@@ -18,6 +18,7 @@ from ..config import DataloaderParams
 from ..constants import (
     BP4D_AU_COLUMN_MAP,
     BP4D_AU_COLUMNS,
+    BP4D_AU_DISTANCES_PATH,
     BP4D_EMBEDDINGS_DIR,
     BP4D_PREPROCESSED_DIR,
     BP4D_SEQUENCES_DIR,
@@ -165,6 +166,7 @@ class BP4DDataset(VisionDataset):
         sequences_dir: Path = BP4D_SEQUENCES_DIR,
         preprocessed_dir: Path = BP4D_PREPROCESSED_DIR,
         embeddings_dir: Path = BP4D_EMBEDDINGS_DIR,
+        au_distances_path: Path = BP4D_AU_DISTANCES_PATH,
         index_path: Path | None = None,
     ) -> None:
         """BP4D frame-level dataset.
@@ -186,6 +188,9 @@ class BP4DDataset(VisionDataset):
                 Path to the preprocessed HDF5 directory.
             embeddings_dir:
                 Path to the embeddings HDF5 directory.
+            au_distances_path:
+                Path to the precomputed AU distance HDF5 file. If the file does
+                not exist, AU distance filtering is silently disabled.
             index_path:
                 Override for the index parquet path. Defaults to BP4D_INDEX_PATH.
         """
@@ -215,23 +220,39 @@ class BP4DDataset(VisionDataset):
                 (i, int(row.frame) - 1)
             )
 
-        # Minimum temporal distance between source and target frames for curriculum
-        # learning. Set to 0 to disable filtering.
-        self.min_target_distance: int = 0
+        # Load AU distance matrices fully at init and close the file so each
+        # DataLoader worker gets its own in-memory copy (h5py is not fork-safe).
+        self.au_dist_matrices: dict[tuple[str, str], np.ndarray] = {}
+        self.frame_to_pos: dict[tuple[str, str], dict[int, int]] = {}
+        if au_distances_path.exists():
+            with h5py.File(au_distances_path, "r") as f:
+                for key, entries in self.seq_index.items():
+                    subject, task = key
+                    if subject in f and task in f[subject]:
+                        self.au_dist_matrices[key] = f[subject][task][:]
+                        sorted_frames = sorted(entries, key=lambda x: x[1])
+                        self.frame_to_pos[key] = {
+                            img_frame: pos
+                            for pos, (_, img_frame) in enumerate(sorted_frames)
+                        }
+
+        # Minimum AU L1 distance between source and target for curriculum learning.
+        # Set to 0 to disable filtering.
+        self.min_au_distance: float = 0.0
 
         # HDF5 handles — opened lazily in _open_h5 to support multiprocessing
         self.preprocessed: dict[str, h5py.File] = {}
         self.embeddings: dict[str, h5py.File] = {}
 
-    def set_min_target_distance(self, distance: int) -> None:
-        """Set the minimum temporal distance for target frame sampling.
+    def set_min_au_distance(self, distance: float) -> None:
+        """Set the minimum AU L1 distance for target frame sampling.
 
         Args:
             distance:
-                Minimum absolute frame difference between source and target.
-                Set to 0 to disable filtering.
+                Minimum AU L1 distance between source and target normalised AU
+                vectors. Set to 0 to disable filtering.
         """
-        self.min_target_distance = distance
+        self.min_au_distance = distance
 
     def __len__(self) -> int:
         """Return the number of samples in the dataset."""
@@ -279,13 +300,17 @@ class BP4DDataset(VisionDataset):
             aus = self.target_transform(aus)
 
         # Sample a target frame from the same subject/task, respecting the
-        # minimum temporal distance for curriculum learning.
+        # minimum AU distance for curriculum learning.
         candidates = self.seq_index[(subject, task)]
-        if self.min_target_distance > 0:
+        key = (subject, task)
+        if self.min_au_distance > 0 and key in self.au_dist_matrices:
+            dist_matrix = self.au_dist_matrices[key]
+            src_pos = self.frame_to_pos[key][img_frame]
+            pos_map = self.frame_to_pos[key]
             valid = [
                 (idx, f)
                 for idx, f in candidates
-                if abs(f - img_frame) >= self.min_target_distance
+                if dist_matrix[src_pos, pos_map[f]] >= self.min_au_distance
             ]
             if not valid:
                 valid = candidates
