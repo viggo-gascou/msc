@@ -128,3 +128,6 @@ output_data/images/
 *.safetensors
 *.pt
 *.pth
+
+# Claude Code
+CLAUDE.md
