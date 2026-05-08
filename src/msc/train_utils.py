@@ -69,6 +69,7 @@ def forward_batch(
     if params.cfg_dropout_prob > 0 and unet.training:
         keep = torch.rand(au_values.shape[0], device=device) >= params.cfg_dropout_prob
         au_values = au_values * keep.float().unsqueeze(1)
+        arcface_embeds = arcface_embeds * keep.float().unsqueeze(1)
 
     au_tokens = au_encoder(au_values)
     au_tokens = identity_adapter(au_tokens, arcface_embeds)
