@@ -3,10 +3,9 @@
 from typing import Callable
 
 import tyro
-from loguru import logger
 
 from msc.config import Args
-from msc.log_utils import setup_file_logging, setup_logging
+from msc.log_utils import setup_logging
 
 
 def cli(
@@ -24,12 +23,7 @@ def cli(
     def decorator(func: Callable[[Args], None]) -> Callable[[], None]:
         def wrapper() -> None:
             cfg = tyro.cli(config_class)
-
             setup_logging(log_level=cfg.log_level)
-            run_dir = setup_file_logging(cfg)
-
-            logger.info(f"Run directory: {run_dir.absolute()}")
-
             return func(cfg)
 
         return wrapper

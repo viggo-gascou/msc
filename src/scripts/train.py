@@ -16,6 +16,7 @@ from msc.cli import cli
 from msc.config import Args
 from msc.constants import RANDOM_SEED
 from msc.data.dataset import get_dataloaders
+from msc.log_utils import setup_file_logging
 from msc.model_utils import freeze_model_layers, load_model
 from msc.train_utils import (
     evaluate,
@@ -42,6 +43,10 @@ def train(cfg: Args) -> None:
         log_with="wandb" if wandb_cfg.enabled else None,
     )
     device = accelerator.device
+
+    if accelerator.is_main_process:
+        run_dir = setup_file_logging(cfg)
+        logger.info(f"Run directory: {run_dir.absolute()}")
 
     if wandb_cfg.enabled:
         accelerator.init_trackers(
