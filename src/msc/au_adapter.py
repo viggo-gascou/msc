@@ -43,7 +43,7 @@ class AUEncoder(nn.Module):
         num_aus: int = NUM_AUS,
         hidden: int = 64,
         dim: int = 768,
-        num_tokens: int = 1,
+        num_tokens: int = 4,
     ) -> None:
         """Initialise AUEncoder.
 
@@ -380,11 +380,6 @@ class AUIPAttnProcessor(nn.Module):
         # ======== AU adapter: expression conditioning (to_k_au / to_v_au) ========
         if au_embedding is not None:
             au_embedding = au_embedding.to(dtype=query.dtype)
-            # CFG-batched: (2B, num_tokens, dim) → split, interpolate, recombine
-            if au_embedding.shape[0] == 2 * b:
-                uncond, cond = au_embedding.chunk(2, dim=0)
-                au_embedding = uncond + au_scale * (cond - uncond)
-
             au_key = (
                 self.to_k_au(au_embedding)
                 .view(b, -1, attn.heads, head_dim)
