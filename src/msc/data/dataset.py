@@ -18,7 +18,6 @@ from ..config import DataloaderParams
 from ..constants import (
     BP4D_AU_COLUMN_MAP,
     BP4D_AU_COLUMNS,
-    BP4D_AU_DISTANCES_PATH,
     BP4D_EMBEDDINGS_DIR,
     BP4D_PREPROCESSED_DIR,
     BP4D_SEQUENCES_DIR,
@@ -166,7 +165,6 @@ class BP4DDataset(VisionDataset):
         sequences_dir: Path = BP4D_SEQUENCES_DIR,
         preprocessed_dir: Path = BP4D_PREPROCESSED_DIR,
         embeddings_dir: Path = BP4D_EMBEDDINGS_DIR,
-        au_distances_path: Path = BP4D_AU_DISTANCES_PATH,
         index_path: Path | None = None,
     ) -> None:
         """BP4D frame-level dataset.
@@ -188,9 +186,6 @@ class BP4DDataset(VisionDataset):
                 Path to the preprocessed HDF5 directory.
             embeddings_dir:
                 Path to the embeddings HDF5 directory.
-            au_distances_path:
-                Path to the precomputed AU distance HDF5 file. If the file does
-                not exist, AU distance filtering is silently disabled.
             index_path:
                 Override for the index parquet path. Defaults to BP4D_INDEX_PATH.
         """
@@ -210,31 +205,33 @@ class BP4DDataset(VisionDataset):
 
         self.index = index.reset_index(drop=True)
 
-        # Each entry is (dataset_idx, 0-based frame number) to allow fast
-        # distance filtering without iloc lookups in __getitem__.
-        self.seq_index: defaultdict[tuple[str, str], list[tuple[int, int]]] = (
-            defaultdict(list)
-        )
+        # Each entry is (dataset_idx, 0-based frame number, raw AU vector) to
+        # allow fast on-the-fly distance filtering in __getitem__.
+        self.seq_index: defaultdict[
+            tuple[str, str], list[tuple[int, int, np.ndarray]]
+        ] = defaultdict(list)
         for i, row in enumerate(self.index.itertuples(index=False)):
+            au_vec = np.nan_to_num(
+                np.array(
+                    [
+                        float(getattr(row, BP4D_AU_COLUMN_MAP[col], float("nan")))
+                        for col in BP4D_AU_COLUMNS
+                    ],
+                    dtype=np.float32,
+                ),
+                nan=0.0,
+            )
             self.seq_index[(str(row.subject), str(row.task))].append(
-                (i, int(row.frame) - 1)
+                (i, int(row.frame) - 1, au_vec)
             )
 
-        # Load AU distance matrices fully at init and close the file so each
-        # DataLoader worker gets its own in-memory copy (h5py is not fork-safe).
-        self.au_dist_matrices: dict[tuple[str, str], np.ndarray] = {}
-        self.frame_to_pos: dict[tuple[str, str], dict[int, int]] = {}
-        if au_distances_path.exists():
-            with h5py.File(au_distances_path, "r") as f:
-                for key, entries in self.seq_index.items():
-                    subject, task = key
-                    if subject in f and task in f[subject]:
-                        self.au_dist_matrices[key] = f[subject][task][:]
-                        sorted_frames = sorted(entries, key=lambda x: x[1])
-                        self.frame_to_pos[key] = {
-                            img_frame: pos
-                            for pos, (_, img_frame) in enumerate(sorted_frames)
-                        }
+        # Subject-level view for cross-task target sampling — same identity,
+        # any task, giving broader expression diversity than within-task only.
+        self.subject_index: defaultdict[str, list[tuple[int, int, np.ndarray]]] = (
+            defaultdict(list)
+        )
+        for (subject, _task), entries in self.seq_index.items():
+            self.subject_index[subject].extend(entries)
 
         # Minimum AU L1 distance between source and target for curriculum learning.
         # Set to 0 to disable filtering.
@@ -299,29 +296,36 @@ class BP4DDataset(VisionDataset):
         if self.target_transform is not None:
             aus = self.target_transform(aus)
 
-        # Sample a target frame from the same subject/task, respecting the
-        # minimum AU distance for curriculum learning.
-        candidates = self.seq_index[(subject, task)]
-        key = (subject, task)
-        if self.min_au_distance > 0 and key in self.au_dist_matrices:
-            dist_matrix = self.au_dist_matrices[key]
-            src_pos = self.frame_to_pos[key][img_frame]
-            pos_map = self.frame_to_pos[key]
+        # Sample a target frame from any task for this subject, respecting the
+        # minimum AU distance.
+        candidates = self.subject_index[subject]
+        if self.min_au_distance > 0:
+            src_aus = np.nan_to_num(
+                np.array(
+                    [
+                        float(row.get(BP4D_AU_COLUMN_MAP[col], float("nan")))
+                        for col in BP4D_AU_COLUMNS
+                    ],
+                    dtype=np.float32,
+                ),
+                nan=0.0,
+            )
             valid = [
-                (idx, f)
-                for idx, f in candidates
-                if dist_matrix[src_pos, pos_map[f]] >= self.min_au_distance
+                (idx, f, aus)
+                for idx, f, aus in candidates
+                if float(np.abs(src_aus - aus).sum()) >= self.min_au_distance
             ]
             if not valid:
                 valid = candidates
         else:
             valid = candidates
-        target_idx, target_img_frame = valid[
+        target_idx, target_img_frame, _ = valid[
             int(torch.randint(len(valid), (1,)).item())
         ]
         target_row = self.index.iloc[target_idx]
+        target_task = str(target_row["task"])
         target_image = self.load_raw(
-            subject=subject, task=task, img_frame=target_img_frame
+            subject=subject, task=target_task, img_frame=target_img_frame
         )
         if self.transform is not None:
             target_image = self.transform(target_image)
