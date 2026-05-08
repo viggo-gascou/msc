@@ -68,8 +68,10 @@ def forward_batch(
     # Only applied during training — val/test always evaluate full conditioning.
     if params.cfg_dropout_prob > 0 and unet.training:
         keep = torch.rand(au_values.shape[0], device=device) >= params.cfg_dropout_prob
-        au_values = au_values * keep.float().unsqueeze(1)
-        arcface_embeds = arcface_embeds * keep.float().unsqueeze(1)
+        au_values = au_values * keep.to(dtype=au_values.dtype).unsqueeze(1)
+        arcface_embeds = arcface_embeds * keep.to(dtype=arcface_embeds.dtype).unsqueeze(
+            1
+        )
 
     au_tokens = au_encoder(au_values)
     au_tokens = identity_adapter(au_tokens, arcface_embeds)
