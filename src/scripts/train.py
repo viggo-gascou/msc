@@ -144,7 +144,7 @@ def train(cfg: Args) -> None:
 
     for epoch in tqdm(range(start_epoch, params.epochs), desc="Epochs", unit="epoch"):
         if not params.reconstruction:
-            au_dist = params.max_au_distance - (
+            au_dist = params.min_au_distance + (
                 params.max_au_distance - params.min_au_distance
             ) * epoch / max(params.epochs - 1, 1)
             train_loader.dataset.set_min_au_distance(au_dist)
