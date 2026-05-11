@@ -79,21 +79,29 @@ def get_dataloaders(
     test_ds = BP4DDataset(
         index_path=BP4D_TEST_INDEX_PATH, transform=val_test_transforms
     )
+    pin_memory = params.dataloader.num_workers > 0
+    persistent_workers = params.dataloader.num_workers > 0
     train_loader = DataLoader(
         train_ds,
         batch_size=dataloader_params.batch_size,
         shuffle=True,
         num_workers=dataloader_params.num_workers,
+        pin_memory=pin_memory,
+        persistent_workers=persistent_workers,
     )
     val_loader = DataLoader(
         val_ds,
         batch_size=dataloader_params.batch_size,
         num_workers=dataloader_params.num_workers,
+        pin_memory=pin_memory,
+        persistent_workers=persistent_workers,
     )
     test_loader = DataLoader(
         test_ds,
         batch_size=dataloader_params.batch_size,
         num_workers=dataloader_params.num_workers,
+        pin_memory=pin_memory,
+        persistent_workers=persistent_workers,
     )
     return train_loader, val_loader, test_loader
 
