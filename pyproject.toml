@@ -63,6 +63,9 @@ name = "pytorch"
 url = "https://download.pytorch.org/whl/cu126"
 explicit = true
 
+[tool.uv]
+default-groups = []
+
 [project.scripts]
 train = "scripts.train:train"
 inference = "scripts.inference:inference"
