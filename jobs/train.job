@@ -40,7 +40,7 @@ source .venv/bin/activate
 echo "Setup complete, running script at $(date)"
 # run the script
 accelerate launch --multi_gpu \
-    --num_processes 3 \
+    --num_processes 4 \
     --num_machines 1 \
     --mixed_precision bf16 \
     --dynamo_backend no \
