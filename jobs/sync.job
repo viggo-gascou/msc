@@ -5,7 +5,8 @@
 #SBATCH --cpus-per-task=8
 #SBATCH --mem-per-cpu=2G
 #SBATCH --time=5:30:00
-#SBATCH --partition=cores
+#SBATCH --nodelist=cn7,cn9,cn10,cn11,cn14,cn15
+#SBATCH --partition=scavenge
 
 ## SETUP
 
@@ -17,6 +18,12 @@ export UV_NO_DEV=1          # skip dev dependencies
 
 ## RUN
 
+echo "Syncing git state at $(date)"
+git pull
+
+echo "Syncing uv state at $(date)"
 uv sync
+UV_EXIT_STATUS=$?
 
 echo "Done, finished at $(date)"
+exit $UV_EXIT_STATUS

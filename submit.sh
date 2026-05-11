@@ -22,11 +22,6 @@ mkdir -p logs/SLURM
 # realpath resolves BASH_SOURCE[0] to the absolute path (the script), dirname strips the last element in the path
 REPO_ROOT="$(dirname "$(realpath "${BASH_SOURCE[0]}")")"
 
-# Run git pull ONCE for sync* modes
-if [[ "$MODE" == sync* ]]; then
-    git -C "$REPO_ROOT" pull
-fi
-
 submit_job() {
     local JOB_NAME="$1"
     shift
@@ -37,7 +32,7 @@ submit_job() {
 
 case "$MODE" in
     sync)
-        submit_job sync jobs/sync.job
+        submit_job sync "$@" jobs/sync.job
         ;;
     train)
         submit_job train "$@" jobs/train.job
