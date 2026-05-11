@@ -6,6 +6,7 @@
 #SBATCH --mem-per-cpu=2G
 #SBATCH --time=5:30:00
 #SBATCH --nodelist=cn7,cn9,cn10,cn11,cn14,cn15
+#SBATCH --nodes=1
 #SBATCH --partition=scavenge
 
 ## SETUP
