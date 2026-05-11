@@ -86,6 +86,9 @@ target/
 # Logs
 logs/
 
+# Training checkpoints
+checkpoints/
+
 # Data
 data/*
 !data/results
@@ -94,8 +97,8 @@ data/*
 models/*
 !models/.gitkeep
 
-# Dotenv file with name and email
-.name_and_email
+# wandb
+results/wandb/*
 
 # Linting cache
 .ruff_cache/
@@ -105,3 +108,26 @@ models/*
 
 # Mkdocs compiled documentation
 site/
+
+# not sure
+discar_imgsdecreased_lr
+checkpoints/best_au_adapter.safetensors
+
+# any image files
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.bmp
+*.tiff
+
+# generated outputs
+output_data/images/
+
+# any model files
+*.safetensors
+*.pt
+*.pth
+
+# Claude Code
+CLAUDE.md

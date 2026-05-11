@@ -16,13 +16,43 @@ LOG_DIR.mkdir(exist_ok=True, parents=True)
 MODEL_DIR.mkdir(exist_ok=True, parents=True)
 
 # BP4D data constants
-BP4D_SEQUENCES_DIR = Path.home() / "projects/semedit/data/BP4D/Sequences"
-BP4D_CODING_DIR = Path.home() / "projects/semedit/data/BP4D/AUCoding"
-BP4D_DATA_DIR = DATA_DIR / "BP4D"
+# Raw sequences and AU coding live in the shared group folder on HPC;
+# fall back to the local data dir otherwise.
+HPC_DATA_DIR = Path("/home/semedit/data")
+
+BP4D_SEQUENCES_DIR = (
+    HPC_DATA_DIR / "BP4D" / "Sequences"
+    if HPC_DATA_DIR.exists()
+    else DATA_DIR / "BP4D" / "Sample" / "Sequences"
+)
+BP4D_CODING_DIR = (
+    HPC_DATA_DIR / "BP4D" / "AUCoding"
+    if HPC_DATA_DIR.exists()
+    else DATA_DIR / "BP4D" / "AUCoding"
+)
+BP4D_DATA_DIR = (
+    DATA_DIR / "BP4D" if HPC_DATA_DIR.exists() else DATA_DIR / "BP4D" / "Sample"
+)
 BP4D_INDEX_PATH = BP4D_DATA_DIR / "bp4d_index.parquet"
-BP4D_TRAIN_INDEX_PATH = BP4D_DATA_DIR / "bp4d_train_index.parquet"
-BP4D_TEST_INDEX_PATH = BP4D_DATA_DIR / "bp4d_test_index.parquet"
-BP4D_VAL_INDEX_PATH = BP4D_DATA_DIR / "bp4d_val_index.parquet"
+BP4D_AU_DISTANCES_PATH = BP4D_DATA_DIR / "au_distances.h5"
+BP4D_VAE_LATENTS_PATH = DATA_DIR / "BP4D" / "vae_latents.h5"
+
+# On HPC use the proper split indices; locally fall back to the single sample index.
+BP4D_TRAIN_INDEX_PATH = (
+    BP4D_INDEX_PATH.with_stem("bp4d_train_index")
+    if HPC_DATA_DIR.exists()
+    else BP4D_INDEX_PATH
+)
+BP4D_VAL_INDEX_PATH = (
+    BP4D_INDEX_PATH.with_stem("bp4d_val_index")
+    if HPC_DATA_DIR.exists()
+    else BP4D_INDEX_PATH
+)
+BP4D_TEST_INDEX_PATH = (
+    BP4D_INDEX_PATH.with_stem("bp4d_test_index")
+    if HPC_DATA_DIR.exists()
+    else BP4D_INDEX_PATH
+)
 
 BP4D_PREPROCESSED_DIR = BP4D_DATA_DIR / "Preprocessed"
 BP4D_EMBEDDINGS_DIR = BP4D_DATA_DIR / "Embeddings"
@@ -31,7 +61,7 @@ BP4D_DATA_DIR.mkdir(exist_ok=True, parents=True)
 BP4D_PREPROCESSED_DIR.mkdir(exist_ok=True, parents=True)
 BP4D_EMBEDDINGS_DIR.mkdir(exist_ok=True, parents=True)
 
-# AU columns coded in BP4D (occurrence), zero-padded to match FACS convention
+# AU columns coded in BP4D, zero-padded to match FACS convention
 BP4D_AU_COLUMNS = [
     "AU01",
     "AU02",
@@ -65,6 +95,13 @@ BP4D_AU_INTENSITY_COLUMNS = ["AU06", "AU10", "AU12", "AU14", "AU17"]
 BP4D_AU_OCCURRENCE_COLUMNS = [
     au for au in BP4D_AU_COLUMNS if au not in BP4D_AU_INTENSITY_COLUMNS
 ]
+
+# Maps each AU name to its index column in the parquet — intensity AUs use the
+# _int column (0-5 scale) rather than the coarser occurrence column (0/1).
+BP4D_AU_COLUMN_MAP: dict[str, str] = {
+    au: (f"{au}_int" if au in BP4D_AU_INTENSITY_COLUMNS else au)
+    for au in BP4D_AU_COLUMNS
+}
 
 # 001 up to 023
 BP4D_FEMALE_SUBJECTS = list(f"F{str(i).zfill(3)}" for i in range(1, 24))

@@ -33,10 +33,10 @@ def tensor_to_bgr(image: torch.Tensor) -> np.ndarray:
 
     Args:
         image:
-            Float tensor of shape ``(C, H, W)``.
+            Float tensor of shape `(C, H, W)`.
 
     Returns:
-        BGR uint8 array of shape ``(H, W, 3)``.
+        BGR uint8 array of shape `(H, W, 3)`.
     """
     img = image.detach().cpu().float()
     if img.min() < 0:

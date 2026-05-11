@@ -1,78 +1,87 @@
-"""Identity Loss Test Script."""
+"""Compare ArcFace and AdaFace embeddings on test images."""
+
+import argparse
 
 import torch
 from loguru import logger
-from omegaconf import DictConfig
 
-from msc.cli import cli
 from msc.constants import DATA_DIR
-from msc.losses import IdentityLoss
+from msc.enums import ONNXProvider
+from msc.face_embeddings import AdaFaceEmbedding, ArcFaceEmbedding, load_adaface
 from msc.torch_utils import load_image_as_tensor
 
 
-@cli()
-def main(cfg: DictConfig) -> None:
-    """Main entry point.
+def similarity_stats(embeddings: torch.Tensor) -> dict[str, float]:
+    """Compute similarity statistics for a batch of embeddings.
 
     Args:
-        cfg: Configuration as OmegaConf DictConfig
-    """
-    TEST_DATA_DIR = DATA_DIR / "test"
-    image_paths = sorted(
-        TEST_DATA_DIR.glob("*.png"), key=lambda x: int(x.stem.split("_")[-1])
-    )
+        embeddings: Tensor of shape (N, D) containing N embeddings of dimension D.
 
-    logger.info(f"Loading {len(image_paths)} images from {TEST_DATA_DIR}")
+    Returns:
+        Dictionary with keys "max", "min", "mean", "std" and corresponding values.
+    """
+    sim_matrix = embeddings @ embeddings.T
+    mask = ~torch.eye(len(embeddings), dtype=torch.bool)
+    cross = sim_matrix[mask]
+    return {
+        "max": cross.max().item(),
+        "min": cross.min().item(),
+        "mean": cross.mean().item(),
+        "std": cross.std().item(),
+    }
+
+
+def main() -> None:
+    """Compare ArcFace and AdaFace pairwise similarities on test images."""
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--det-size", type=int, nargs=2, default=[640, 640], metavar=("H", "W")
+    )
+    args = parser.parse_args()
+    det_size = tuple(args.det_size)
+
+    test_dir = DATA_DIR / "test"
+    image_paths = sorted(
+        test_dir.glob("*.png"), key=lambda x: int(x.stem.split("_")[-1])
+    )
+    logger.info(f"Loading {len(image_paths)} images from {test_dir}")
+
     images = torch.stack(
         [load_image_as_tensor(p, dtype=torch.float32, scale=True) for p in image_paths]
-    )  # (N, C, H, W)
-
-    identity_loss = IdentityLoss(
-        model_name=cfg.identity.model,
-        ctx_id=cfg.identity.ctx_id,
-        providers=cfg.identity.providers,
-        det_size=tuple(cfg.identity.det_size),
     )
 
-    logger.info("Extracting embeddings...")
-    with torch.no_grad():
-        embeddings = identity_loss._get_embeddings(images)  # (N, 512)
+    # --- ArcFace ---
+    logger.info("Extracting ArcFace embeddings (InsightFace buffalo_l)...")
+    arcface = ArcFaceEmbedding(providers=[ONNXProvider.CPU], det_size=det_size)
+    arc_embs = arcface.embed_batch(imgs=images)
 
-    # Check how many images had no face detected (zero vectors)
-    norms = embeddings.norm(dim=1)
-    no_face_mask = norms == 0
-    no_face = no_face_mask.sum().item()
+    no_face = (arc_embs.norm(dim=1) == 0).sum().item()
     if no_face:
-        logger.warning(f"No face detected in {no_face}/{len(image_paths)} images")
+        logger.warning(f"ArcFace: no face detected in {no_face}/{len(images)} images")
 
-    # Only keep embeddings where a face was detected
-    valid_embeddings = embeddings[~no_face_mask]
-    logger.info(f"Computing similarities on {len(valid_embeddings)} valid embeddings")
+    valid_arc = arc_embs[arc_embs.norm(dim=1) > 0]
+    arc_stats = similarity_stats(embeddings=valid_arc)
+    logger.info(f"ArcFace similarities ({len(valid_arc)} valid):")
+    for k, v in arc_stats.items():
+        logger.info(f"  {k}: {v:.4f}")
 
-    # Pairwise cosine similarity matrix — fast via matmul since embeddings are normalised
-    sim_matrix = valid_embeddings @ valid_embeddings.T  # (N, N)
+    # --- AdaFace ---
+    logger.info("Loading AdaFace model...")
+    adaface: AdaFaceEmbedding = load_adaface(device="cpu", det_size=det_size)
 
-    # Mask out the diagonal (self-similarity is always 1.0)
-    mask = ~torch.eye(len(valid_embeddings), dtype=torch.bool)
-    cross_sims = sim_matrix[mask]
+    logger.info("Extracting AdaFace embeddings (IR-101)...")
+    ada_embs = adaface.embed_batch(imgs=images)
 
-    logger.info(f"Pairwise cosine similarities ({len(cross_sims)} pairs):")
-    logger.info(f"  Max:  {cross_sims.max():.4f}")
-    logger.info(f"  Min:  {cross_sims.min():.4f}")
-    logger.info(f"  Mean: {cross_sims.mean():.4f}")
-    logger.info(f"  Std:  {cross_sims.std():.4f}")
-    logger.info(f"  Shape: {sim_matrix.shape}")
-    logger.info(f"  Shape (single): {embeddings[0].shape}")
+    valid_ada = ada_embs[arc_embs.norm(dim=1) > 0]
+    ada_stats = similarity_stats(embeddings=valid_ada)
+    logger.info(f"AdaFace similarities ({len(valid_ada)} valid):")
+    for k, v in ada_stats.items():
+        logger.info(f"  {k}: {v:.4f}")
 
-    # Demonstrate the actual loss — pick the first two images with valid embeddings
-    valid_indices = (~no_face_mask).nonzero(as_tuple=True)[0]
-    if len(valid_indices) >= 2:
-        pair = images[valid_indices[:2]]
-        loss = identity_loss(pair[:1], pair[1:])
-        logger.info(f"  Identity loss (two different images): {loss.item():.4f}")
-
-        same = identity_loss(pair[:1], pair[:1])
-        logger.info(f"  Identity loss (same image vs itself): {same.item():.4f}")
+    # --- Comparison ---
+    logger.info("Embedding space agreement (cosine sim between ArcFace and AdaFace):")
+    agreement = torch.nn.functional.cosine_similarity(valid_arc, valid_ada, dim=1)
+    logger.info(f"  mean: {agreement.mean():.4f}  std: {agreement.std():.4f}")
 
 
 if __name__ == "__main__":

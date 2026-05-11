@@ -2,9 +2,11 @@
 
 #SBATCH --job-name=semedit
 #SBATCH --output=logs/SLURM/train.%j.out
+#SBATCH --nodes=2
+#SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=6
 #SBATCH --mem-per-cpu=6G
-#SBATCH --gres=gpu:a100_40gb:3
+#SBATCH --gres=gpu:a30:1
 #SBATCH --time=1-00:00:00
 #SBATCH --partition=scavenge
 #SBATCH --mail-type=BEGIN,END
@@ -28,10 +30,14 @@ export NO_ALBUMENTATIONS_UPDATE=1
 
 ## RUN
 
-echo "Running on $(hostname):"
+MASTER_NODE=$(scontrol show hostnames $SLURM_JOB_NODELIST | head -1)
+MASTER_PORT=$(shuf -i8000-9999 -n1)
+
+echo "Running on nodes: $(scontrol show hostnames $SLURM_JOB_NODELIST | tr '\n' ' ')"
+echo "Master node: $MASTER_NODE, port: $MASTER_PORT"
 nvidia-smi --query-gpu=index,gpu_name,memory.total --format=csv,noheader,nounits | awk -F',' '{printf "  GPU %s: %s (%s MiB)\n", $1, $2, $3}'
 VRAM_TOTAL=$(nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits | awk '{s+=$1} END {print s}')
-echo "Total VRAM: ${VRAM_TOTAL} MiB across $(nvidia-smi --query-gpu=name --format=csv,noheader | wc -l) GPUs"
+echo "Total VRAM per node: ${VRAM_TOTAL} MiB"
 
 # Activate the virtual environment
 echo "Activating virtual environment..."
@@ -39,17 +45,21 @@ source .venv/bin/activate
 
 echo "Setup complete, running script at $(date)"
 # run the script
-accelerate launch --multi_gpu \
-    --num_processes 3 \
-    --num_machines 1 \
+srun accelerate launch \
+    --multi_gpu \
+    --num_processes 2 \
+    --num_machines 2 \
+    --machine_rank $SLURM_PROCID \
+    --main_process_ip $MASTER_NODE \
+    --main_process_port $MASTER_PORT \
     --mixed_precision bf16 \
     --dynamo_backend no \
     src/scripts/train.py \
     --parameters.unet-model "SG161222/Realistic_Vision_V4.0_noVAE" \
     --parameters.optimizer.lr 1e-4 \
-    --parameters.dataloader.batch-size 16 \
-    --parameters.gradient-accumulation-steps 5 \
-    --parameters.no-early-stopping \
+    --parameters.dataloader.batch-size 8 \
+    --parameters.gradient-accumulation-steps 6 \
+    --parameters.reconstruction \
     --parameters.lora.enabled \
     --parameters.lora.rank 16
 SCRIPT_EXIT=$?

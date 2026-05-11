@@ -1,82 +1,237 @@
-"""Minimal FaceID IP-Adapter training loop on BP4D."""
+"""FaceID IP-Adapter + AU adapter training loop on BP4D."""
+
+from datetime import datetime
+from pathlib import Path
 
 import torch
-import torch.nn.functional as F
 from accelerate import Accelerator
 from accelerate.utils import set_seed
+from dotenv import load_dotenv
 from loguru import logger
-from omegaconf import DictConfig
 from tqdm import tqdm
+from transformers import CLIPTokenizer
 
+from msc.au_adapter import AUEncoder, IdentityAdapter, save_au_adapter
 from msc.cli import cli
+from msc.config import Args
 from msc.constants import RANDOM_SEED
-from msc.data import get_dataloaders
-from msc.train_utils import freeze_model_layers, load_model
+from msc.data.dataset import get_dataloaders
+from msc.log_utils import setup_file_logging
+from msc.model_utils import freeze_model_layers, load_model
+from msc.train_utils import (
+    evaluate,
+    load_checkpoint,
+    save_checkpoint,
+    train_one_epoch,
+    validate,
+)
 
 
 @cli()
-def train(cfg: DictConfig) -> None:
-    """Train a model on BP4D."""
+def train(cfg: Args) -> None:
+    """Train AU adapter on BP4D with FaceID IP-Adapter conditioning."""
+    load_dotenv()
     set_seed(RANDOM_SEED)
-    accelerator = Accelerator()
-    device = accelerator.device
 
     params = cfg.parameters
+    opt_cfg = params.optimizer
     ip_cfg = cfg.ip_adapter
+    wandb_cfg = cfg.wandb
 
-    pipeline, unet, vae, text_encoder, tokenizer, scheduler = load_model(params, ip_cfg)
-    unet, vae, text_encoder = freeze_model_layers(unet, vae, text_encoder)
+    accelerator = Accelerator(
+        gradient_accumulation_steps=params.gradient_accumulation_steps,
+        log_with="wandb" if wandb_cfg.enabled else None,
+    )
+    device = accelerator.device
 
-    train_loader, val_loader, test_loader = get_dataloaders(params)
+    if accelerator.is_main_process:
+        run_dir = setup_file_logging(cfg)
+        logger.info(f"Run directory: {run_dir.absolute()}")
 
-    # TODO: add optimizer
-    unet, vae, text_encoder = accelerator.prepare(unet, vae, text_encoder)
-    train_loader, val_loader, test_loader = accelerator.prepare(
-        train_loader, val_loader, test_loader
+    if wandb_cfg.enabled:
+        accelerator.init_trackers(
+            project_name=wandb_cfg.project,
+            config={
+                "learning_rate": opt_cfg.learning_rate,
+                "weight_decay": opt_cfg.weight_decay,
+                "adam_beta1": opt_cfg.adam_beta1,
+                "adam_beta2": opt_cfg.adam_beta2,
+                "adam_eps": opt_cfg.adam_eps,
+                "batch_size": params.dataloader.batch_size,
+                "epochs": params.epochs,
+                "augmentation_proba": params.augmentation_proba,
+                "early_stopping": params.early_stopping,
+                "patience": params.patience,
+                "unet_model": params.unet_model,
+                "ip_adapter_repo": ip_cfg.repo,
+                "ip_adapter_weight_id": ip_cfg.weight_id,
+            },
+            init_kwargs={
+                "wandb": {
+                    "entity": wandb_cfg.entity,
+                    "name": wandb_cfg.run_name or None,
+                }
+            },
+        )
+
+    unet, vae, text_encoder, tokenizer, scheduler, au_procs, face_proj = load_model(
+        params, ip_cfg
+    )
+    unet, vae, text_encoder, au_procs = freeze_model_layers(
+        unet, vae, text_encoder, au_procs, params.lora
+    )
+    if params.gradient_checkpointing:
+        unet.enable_gradient_checkpointing()
+
+    # Cast frozen components to the accelerator's dtype; trainable parts stay
+    # in fp32 and are handled by Accelerate's mixed precision autocast.
+    weight_dtype = {"fp16": torch.float16, "bf16": torch.bfloat16}.get(
+        accelerator.mixed_precision, torch.float32
+    )
+    for model in [vae, text_encoder, face_proj]:
+        model.to(device, dtype=weight_dtype)
+    face_proj.requires_grad_(False)
+
+    au_encoder = AUEncoder()
+    identity_adapter = IdentityAdapter()
+
+    optimizer = torch.optim.AdamW(
+        params=(
+            list(au_encoder.parameters())
+            + list(identity_adapter.parameters())
+            + [p for p in unet.parameters() if p.requires_grad]
+        ),
+        lr=opt_cfg.learning_rate,
+        betas=(opt_cfg.adam_beta1, opt_cfg.adam_beta2),
+        eps=opt_cfg.adam_eps,
+        weight_decay=opt_cfg.weight_decay,
     )
 
-    for epoch in tqdm(range(params.epochs), desc="Epochs", unit="epoch"):
-        epoch_loss = 0.0
-        for batch in tqdm(train_loader, desc="Training", unit="batch", leave=False):
-            pixel_values = batch["image"].to(device)
-            faceid_embeds = batch["arcface"].to(device)
+    train_loader, val_loader, test_loader = get_dataloaders(
+        params.dataloader, params.augmentation_proba
+    )
+    if not params.reconstruction:
+        # Fix val/test at the end-of-curriculum distance so they are comparable
+        # to late-stage training difficulty, not the easier random-pair baseline.
+        val_loader.dataset.set_min_au_distance(params.min_au_distance)
+        test_loader.dataset.set_min_au_distance(params.min_au_distance)
 
-            latents = vae.encode(pixel_values).latent_dist.sample()
-            latents = latents * vae.config.scaling_factor
+    start_epoch = 0
+    best_val_loss = float("inf")
+    patience_counter = 0
 
-            noise = torch.randn_like(latents)
-            timesteps = torch.randint(
-                0,
-                scheduler.config.num_train_timesteps,
-                (latents.shape[0],),
-                device=device,
-            ).long()
-            noisy = scheduler.add_noise(
-                original_samples=latents, noise=noise, timesteps=timesteps
+    if params.resume_from is not None:
+        start_epoch, best_val_loss, patience_counter = load_checkpoint(
+            params.resume_from, unet, au_encoder, identity_adapter, au_procs, optimizer
+        )
+        start_epoch += 1  # resume from the next epoch
+        logger.info(
+            f"Resumed from {params.resume_from}: epoch {start_epoch}, "
+            f"best val loss {best_val_loss:.4f}"
+        )
+
+    unet, au_encoder, identity_adapter, optimizer, train_loader = accelerator.prepare(
+        unet, au_encoder, identity_adapter, optimizer, train_loader
+    )
+
+    tokenizer: CLIPTokenizer = tokenizer
+
+    checkpoint_dir = Path(params.checkpoint_dir) / datetime.now().strftime(
+        "%Y-%m-%d_%H-%M-%S"
+    )
+    checkpoint_dir.mkdir(parents=True, exist_ok=True)
+    checkpoint_path = checkpoint_dir / "checkpoint_latest.pt"
+
+    for epoch in tqdm(range(start_epoch, params.epochs), desc="Epochs", unit="epoch"):
+        if not params.reconstruction:
+            au_dist = params.max_au_distance - (
+                params.max_au_distance - params.min_au_distance
+            ) * epoch / max(params.epochs - 1, 1)
+            train_loader.dataset.set_min_au_distance(au_dist)
+
+        train_loss = train_one_epoch(
+            unet,
+            vae,
+            text_encoder,
+            tokenizer,
+            scheduler,
+            au_encoder,
+            identity_adapter,
+            face_proj,
+            optimizer,
+            train_loader,
+            accelerator,
+            device,
+            params=params,
+        )
+        val_loss = validate(
+            unet,
+            vae,
+            text_encoder,
+            tokenizer,
+            scheduler,
+            au_encoder,
+            identity_adapter,
+            face_proj,
+            val_loader,
+            accelerator,
+            device,
+            params=params,
+        )
+        logger.info(f"epoch {epoch + 1} | train {train_loss:.4f} | val {val_loss:.4f}")
+        accelerator.log(
+            {"train/loss": train_loss, "val/loss": val_loss, "epoch": epoch + 1}
+        )
+
+        if val_loss < best_val_loss:
+            best_val_loss = val_loss
+            patience_counter = 0
+            if accelerator.is_main_process:
+                save_au_adapter(
+                    accelerator.unwrap_model(model=unet),
+                    accelerator.unwrap_model(model=au_encoder),
+                    accelerator.unwrap_model(model=identity_adapter),
+                    au_procs,
+                    checkpoint_dir / "best_au_adapter.safetensors",
+                )
+                logger.info(f"Saved best model (val loss {best_val_loss:.4f})")
+        else:
+            patience_counter += 1
+            if params.early_stopping and patience_counter >= params.patience:
+                logger.info(f"Early stopping after {epoch + 1} epochs")
+                break
+
+        if (epoch + 1) % params.checkpoint_every == 0 and accelerator.is_main_process:
+            save_checkpoint(
+                str(checkpoint_path),
+                accelerator.unwrap_model(model=unet),
+                accelerator.unwrap_model(model=au_encoder),
+                accelerator.unwrap_model(model=identity_adapter),
+                au_procs,
+                optimizer,
+                epoch,
+                best_val_loss,
+                patience_counter,
             )
+            logger.info(f"Saved checkpoint at epoch {epoch + 1}")
 
-            ids = tokenizer(
-                [""] * latents.shape[0],
-                padding="max_length",
-                max_length=tokenizer.model_max_length,
-                truncation=True,
-                return_tensors="pt",
-            ).input_ids.to(device)
-            cond = text_encoder(ids).last_hidden_state
-
-            pred = unet(
-                sample=noisy,
-                timestep=timesteps,
-                encoder_hidden_states=cond,
-                added_cond_kwargs={"image_embeds": [faceid_embeds.unsqueeze(1)]},
-            ).sample
-            loss = F.mse_loss(input=pred, target=noise)
-            epoch_loss += loss.item()
-
-            # TODO: enable backward pass once trainable params are added
-            # accelerator.backward(loss)
-
-        logger.info(f"epoch {epoch + 1} | loss {epoch_loss / len(train_loader):.4f}")
+    test_loss = evaluate(
+        unet,
+        vae,
+        text_encoder,
+        tokenizer,
+        scheduler,
+        au_encoder,
+        identity_adapter,
+        face_proj,
+        test_loader,
+        accelerator,
+        device,
+        params=params,
+    )
+    logger.info(f"test loss: {test_loss:.4f}")
+    accelerator.log({"test/loss": test_loss})
+    accelerator.end_training()
 
 
 if __name__ == "__main__":
