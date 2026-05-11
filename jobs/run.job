@@ -13,9 +13,6 @@
 # load uv
 module load uv/0.7.13-GCCcore-14.2.0
 
-# Never sync venv
-export UV_NO_SYNC=1
-
 # Set this to match "cpus-per-task", supresses ONNX warning on cpu affinity
 export OMP_NUM_THREADS=6
 
@@ -25,7 +22,7 @@ export NO_ALBUMENTATIONS_UPDATE=1
 ## RUN
 
 SCRIPT="$1"
-
-uv run "$SCRIPT"
+# Run without syncing venv
+uv run --no-sync "$SCRIPT"
 
 echo "Done, finished at $(date)"

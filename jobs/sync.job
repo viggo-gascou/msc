@@ -14,16 +14,14 @@
 # load uv
 module load uv/0.7.13-GCCcore-14.2.0
 
-export UV_FROZEN=1          # never update lockfile
-export UV_NO_DEV=1          # skip dev dependencies
-
 ## RUN
 
 echo "Syncing git state at $(date)"
 git pull
 
 echo "Syncing uv state at $(date)"
-uv sync
+# frozen sync to avoid updating lockfile, no-dev to avoid dev dependencies
+uv sync --frozen --no-dev
 UV_EXIT_STATUS=$?
 
 echo "Done, finished at $(date)"
