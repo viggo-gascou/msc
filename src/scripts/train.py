@@ -127,10 +127,11 @@ def train(cfg: Args) -> None:
             params.resume_from, unet, au_encoder, identity_adapter, au_procs, optimizer
         )
         start_epoch += 1  # resume from the next epoch
-        logger.info(
-            f"Resumed from {params.resume_from}: epoch {start_epoch}, "
-            f"best val loss {best_val_loss:.4f}"
-        )
+        if accelerator.is_main_process:
+            logger.info(
+                f"Resumed from {params.resume_from}: epoch {start_epoch}, "
+                f"best val loss {best_val_loss:.4f}"
+            )
 
     unet, au_encoder, identity_adapter, optimizer, train_loader = accelerator.prepare(
         unet, au_encoder, identity_adapter, optimizer, train_loader
@@ -147,7 +148,12 @@ def train(cfg: Args) -> None:
         OmegaConf.save(OmegaConf.structured(cfg), checkpoint_dir / "config.yaml")
     checkpoint_path = checkpoint_dir / "checkpoint_latest.pt"
 
-    for epoch in tqdm(range(start_epoch, params.epochs), desc="Epochs", unit="epoch"):
+    for epoch in tqdm(
+        range(start_epoch, params.epochs),
+        desc="Epochs",
+        unit="epoch",
+        disable=not accelerator.is_main_process,
+    ):
         if not params.reconstruction:
             au_dist = params.min_au_distance + (
                 params.max_au_distance - params.min_au_distance
@@ -183,7 +189,10 @@ def train(cfg: Args) -> None:
             device,
             params=params,
         )
-        logger.info(f"epoch {epoch + 1} | train {train_loss:.4f} | val {val_loss:.4f}")
+        if accelerator.is_main_process:
+            logger.info(
+                f"epoch {epoch + 1} | train {train_loss:.4f} | val {val_loss:.4f}"
+            )
         accelerator.log(
             {"train/loss": train_loss, "val/loss": val_loss, "epoch": epoch + 1}
         )
@@ -202,7 +211,11 @@ def train(cfg: Args) -> None:
                 logger.info(f"Saved best model (val loss {best_val_loss:.4f})")
         else:
             patience_counter += 1
-            if params.early_stopping and patience_counter >= params.patience:
+            if (
+                params.early_stopping
+                and patience_counter >= params.patience
+                and accelerator.is_main_process
+            ):
                 logger.info(f"Early stopping after {epoch + 1} epochs")
                 break
 
@@ -234,7 +247,8 @@ def train(cfg: Args) -> None:
         device,
         params=params,
     )
-    logger.info(f"test loss: {test_loss:.4f}")
+    if accelerator.is_main_process:
+        logger.info(f"test loss: {test_loss:.4f}")
     accelerator.log({"test/loss": test_loss})
     accelerator.end_training()
 
