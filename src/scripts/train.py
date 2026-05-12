@@ -1,5 +1,6 @@
 """FaceID IP-Adapter + AU adapter training loop on BP4D."""
 
+import os
 from datetime import datetime
 from pathlib import Path
 
@@ -8,6 +9,7 @@ from accelerate import Accelerator
 from accelerate.utils import set_seed
 from dotenv import load_dotenv
 from loguru import logger
+from omegaconf import OmegaConf
 from tqdm import tqdm
 from transformers import CLIPTokenizer
 
@@ -136,10 +138,13 @@ def train(cfg: Args) -> None:
 
     tokenizer: CLIPTokenizer = tokenizer
 
-    checkpoint_dir = Path(params.checkpoint_dir) / datetime.now().strftime(
-        "%Y-%m-%d_%H-%M-%S"
+    slurm_job_id = os.environ.get("SLURM_JOB_ID", "local")
+    checkpoint_dir = Path(params.checkpoint_dir) / (
+        f"{slurm_job_id}_" + datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     )
     checkpoint_dir.mkdir(parents=True, exist_ok=True)
+    if accelerator.is_main_process:
+        OmegaConf.save(OmegaConf.structured(cfg), checkpoint_dir / "config.yaml")
     checkpoint_path = checkpoint_dir / "checkpoint_latest.pt"
 
     for epoch in tqdm(range(start_epoch, params.epochs), desc="Epochs", unit="epoch"):

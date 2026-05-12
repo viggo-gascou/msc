@@ -37,7 +37,7 @@ def setup_file_logging(cfg: Args, output_dir: str = "logs") -> Path:
     now = datetime.now()
     job_id = os.environ.get("SLURM_JOB_ID", "local")
     run_dir = Path(
-        output_dir, now.strftime("%Y-%m-%d"), f"{now.strftime('%H-%M-%S')}_{job_id}"
+        output_dir, now.strftime("%Y-%m-%d"), f"{job_id}_{now.strftime('%H-%M-%S')}"
     )
     run_dir.mkdir(parents=True, exist_ok=True)
 

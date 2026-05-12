@@ -571,11 +571,16 @@ def load_au_adapter(
             if k.startswith(prefix + ".")
         }
 
-    au_encoder = AUEncoder()
-    au_encoder.load_state_dict(_strip(flat, "au_encoder"))
+    au_sd = _strip(flat, "au_encoder")
+    au_dim = au_sd["norm.weight"].shape[0]
+    au_num_tokens = au_sd["to_tokens.weight"].shape[0] // au_dim
+    au_encoder = AUEncoder(num_tokens=au_num_tokens, dim=au_dim)
+    au_encoder.load_state_dict(au_sd)
 
-    identity_adapter = IdentityAdapter()
-    identity_adapter.load_state_dict(_strip(flat, "identity_adapter"))
+    id_sd = _strip(flat, "identity_adapter")
+    id_dim, faceid_dim = id_sd["to_scale.weight"].shape
+    identity_adapter = IdentityAdapter(dim=id_dim, faceid_dim=faceid_dim)
+    identity_adapter.load_state_dict(id_sd)
 
     # Inject LoRA structure before loading weights — load_state_dict with
     # strict=False silently drops keys that don't exist in the model, so the
