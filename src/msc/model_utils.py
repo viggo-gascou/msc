@@ -9,12 +9,7 @@ if TYPE_CHECKING:
 import torch
 from diffusers import StableDiffusionImg2ImgPipeline, StableDiffusionPipeline
 from diffusers.models import AutoencoderKL, UNet2DConditionModel
-from diffusers.schedulers import (
-    DDIMScheduler,
-    EulerDiscreteScheduler,
-    LMSDiscreteScheduler,
-    PNDMScheduler,
-)
+from diffusers.schedulers import DDIMScheduler, LMSDiscreteScheduler, PNDMScheduler
 from huggingface_hub import hf_hub_download
 from peft import LoraConfig
 from torch import nn
@@ -130,9 +125,7 @@ def load_inference_pipeline(
             params.vae_model, torch_dtype=dtype
         )
 
-    # EulerDiscreteScheduler supports custom timestep lists needed for img2img;
-    # DDIMScheduler does not.
-    pipeline.scheduler = EulerDiscreteScheduler.from_config(pipeline.scheduler.config)
+    pipeline.scheduler = DDIMScheduler.from_config(pipeline.scheduler.config)
 
     ip_adapter_path = hf_hub_download(repo_id=ip_cfg.repo, filename=ip_cfg.weight_id)
 
