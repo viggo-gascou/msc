@@ -196,4 +196,11 @@ AU_TO_EMOTION_MAP = {
 }
 
 
+FFHQ_DATA_DIR = DATA_DIR / "ffhq_data"
+FFHQ_IMAGES_DIR = FFHQ_DATA_DIR / "data"
+FFHQ_INDEX_PATH = FFHQ_DATA_DIR / "ffhq_index.parquet"
+FFHQ_EMBEDDINGS_PATH = FFHQ_DATA_DIR / "ffhq_embeddings.h5"
+
+FFHQ_DATA_DIR.mkdir(exist_ok=True, parents=True)
+
 RANDOM_SEED = 4040
