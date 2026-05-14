@@ -30,10 +30,10 @@ all_paths = sorted(
     p for p in IMAGES_DIR.iterdir() if p.suffix.lower() in {".jpg", ".jpeg", ".png"}
 )
 
-index = pd.read_parquet(INDEX_PATH)
+allowed = set(pd.read_parquet(INDEX_PATH)["image_number"])
 before = len(all_paths)
 image_paths = [
-    str(p) for p in all_paths if str(p.relative_to(IMAGES_DIR)) in index["image_number"]
+    str(p) for p in all_paths if str(p.relative_to(IMAGES_DIR)) in allowed
 ]
 print(f"Index filtered {before} → {len(image_paths)} images (adults only)")
 
@@ -63,7 +63,7 @@ for chunk in tqdm(chunks, desc="ffhq", unit="chunk"):
     rows.append(chunk_df)
 
 combined = pd.concat(rows, ignore_index=True)
-combined.to_csv(OUT_PATH, index=False)
+combined.to_parquet(OUT_PATH, index=False)
 
 elapsed = time.perf_counter() - t0
 print(f"\nDone: {elapsed:.1f}s  ({elapsed / n * 1000:.0f}ms/img)  →  {len(combined)} rows")
