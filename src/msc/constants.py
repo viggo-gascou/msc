@@ -61,6 +61,51 @@ BP4D_DATA_DIR.mkdir(exist_ok=True, parents=True)
 BP4D_PREPROCESSED_DIR.mkdir(exist_ok=True, parents=True)
 BP4D_EMBEDDINGS_DIR.mkdir(exist_ok=True, parents=True)
 
+# FFHQ data constants
+FFHQ_DATA_DIR = DATA_DIR / "FFHQ"
+FFHQ_IMAGES_DIR = (
+    HPC_DATA_DIR / "FFHQ" / "images1024x1024"
+    if HPC_DATA_DIR.exists()
+    else FFHQ_DATA_DIR / "images1024x1024"
+)
+LIBREFACE_FFHQ_PATH = FFHQ_DATA_DIR / "ffhq_libreface.parquet"
+FFHQ_EMBEDDINGS_PATH = FFHQ_DATA_DIR / "ffhq_embeddings.h5"
+
+FFHQ_DATA_DIR.mkdir(exist_ok=True, parents=True)
+
+# Maps each BP4D AU column name to its LibreFace counterpart (None = not in LibreFace).
+# LibreFace R = intensity [0, 1]; D = occurrence detection {0, 1}.
+# 15/23 BP4D AUs overlap; 6 are type-matched (R<->intensity or D<->binary):
+#   AU06, AU12, AU17 (both intensity), AU07, AU23, AU24 (both binary).
+# Mismatches: AU01/02/04/05/09/15/20 are BP4D binary but LibreFace R -> use intensity
+#             AU10/14 are BP4D intensity but LibreFace D → use binary col.
+# DO NOT apply AU_SCALE to FFHQ tensors — LibreFace values are already in [0, 1].
+LIBREFACE_AU_COLUMN_MAP: dict[str, str | None] = {
+    "AU01": "au_1_intensity",  # BP4D binary, LibreFace R
+    "AU02": "au_2_intensity",  # BP4D binary, LibreFace R
+    "AU04": "au_4_intensity",  # BP4D binary, LibreFace R
+    "AU05": "au_5_intensity",  # BP4D binary, LibreFace R
+    "AU06": "au_6_intensity",  # BP4D intensity, LibreFace R (type match)
+    "AU07": "au_7",  # BP4D binary, LibreFace D (type match)
+    "AU09": "au_9_intensity",  # BP4D binary, LibreFace R
+    "AU10": "au_10",  # BP4D intensity, LibreFace D
+    "AU11": None,
+    "AU12": "au_12_intensity",  # BP4D intensity, LibreFace R (type match)
+    "AU13": None,
+    "AU14": "au_14",  # BP4D intensity, LibreFace D
+    "AU15": "au_15_intensity",  # BP4D binary, LibreFace R
+    "AU16": None,
+    "AU17": "au_17_intensity",  # BP4D intensity, LibreFace R (type match)
+    "AU18": None,
+    "AU19": None,
+    "AU20": "au_20_intensity",  # BP4D binary, LibreFace R
+    "AU22": None,
+    "AU23": "au_23",  # BP4D binary, LibreFace D (type match)
+    "AU24": "au_24",  # BP4D binary, LibreFace D (type match)
+    "AU27": None,
+    "AU28": None,
+}
+
 # AU columns coded in BP4D, zero-padded to match FACS convention
 BP4D_AU_COLUMNS = [
     "AU01",
@@ -194,13 +239,5 @@ AU_TO_EMOTION_MAP = {
     "AU26": ["fear", "surprise"],
     "AU38": ["anger"],
 }
-
-
-FFHQ_DATA_DIR = DATA_DIR / "ffhq_data"
-FFHQ_IMAGES_DIR = FFHQ_DATA_DIR / "data"
-FFHQ_INDEX_PATH = FFHQ_DATA_DIR / "ffhq_index.parquet"
-FFHQ_EMBEDDINGS_PATH = FFHQ_DATA_DIR / "ffhq_embeddings.h5"
-
-FFHQ_DATA_DIR.mkdir(exist_ok=True, parents=True)
 
 RANDOM_SEED = 4040
