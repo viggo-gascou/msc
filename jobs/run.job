@@ -24,5 +24,8 @@ export NO_ALBUMENTATIONS_UPDATE=1
 SCRIPT="$1"
 # Run without syncing venv
 uv run --no-sync "$SCRIPT"
+SCRIPT_EXIT_CODE=$?
 
 echo "Done, finished at $(date)"
+
+exit $SCRIPT_EXIT_CODE
