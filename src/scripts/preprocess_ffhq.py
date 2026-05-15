@@ -42,8 +42,8 @@ def parse_args() -> argparse.Namespace:
     p.add_argument(
         "--det-size",
         type=int,
-        default=1024,
-        help="Square detection input size in pixels (default: 1024).",
+        default=512,
+        help="Square detection input size in pixels (default: 512).",
     )
     return p.parse_args()
 
