@@ -1,5 +1,5 @@
 # /// script
-# requires-python = ">=3.10"
+# requires-python = ">=3.11,<3.12"
 # dependencies = [
 #   "libreface",
 #   "loguru",
