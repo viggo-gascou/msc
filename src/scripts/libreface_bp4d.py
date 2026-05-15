@@ -1,6 +1,7 @@
 # /// script
 # requires-python = ">=3.11,<3.12"
 # dependencies = [
+#   "dlib",
 #   "libreface",
 #   "loguru",
 #   "pandas",
