@@ -68,8 +68,10 @@ FFHQ_IMAGES_DIR = (
     if HPC_DATA_DIR.exists()
     else FFHQ_DATA_DIR / "images1024x1024"
 )
+FFHQ_INDEX_PATH = FFHQ_DATA_DIR / "ffhq_index.parquet"
 LIBREFACE_FFHQ_PATH = FFHQ_DATA_DIR / "ffhq_libreface.parquet"
 FFHQ_EMBEDDINGS_PATH = FFHQ_DATA_DIR / "ffhq_embeddings.h5"
+FFHQ_PREPROCESSED_PATH = FFHQ_DATA_DIR / "ffhq_preprocessed.h5"
 
 FFHQ_DATA_DIR.mkdir(exist_ok=True, parents=True)
 

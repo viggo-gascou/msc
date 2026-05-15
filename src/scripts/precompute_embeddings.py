@@ -17,12 +17,9 @@ training the generated image is embedded on-the-fly so gradients can flow.
 """
 
 import argparse
-from pathlib import Path
 
-import cv2
 import h5py
 import numpy as np
-import pandas as pd
 import torch
 from loguru import logger
 from tqdm import tqdm
@@ -31,8 +28,7 @@ from msc.constants import (
     BP4D_EMBEDDINGS_DIR,
     BP4D_PREPROCESSED_DIR,
     FFHQ_EMBEDDINGS_PATH,
-    FFHQ_IMAGES_DIR,
-    LIBREFACE_FFHQ_PATH,
+    FFHQ_PREPROCESSED_PATH,
 )
 from msc.enums import ONNXProvider
 from msc.face_embeddings.adaface import load_adaface
@@ -128,86 +124,52 @@ def embed_arcface_batched(
 
 
 def run_ffhq(arcface: ArcFaceEmbedding, force: bool, batch_size: int) -> None:
-    """Precompute ArcFace embeddings for all FFHQ images and write to HDF5.
+    """Precompute ArcFace embeddings for FFHQ from preprocessed crops.
 
-    Detects and aligns each face individually, then flushes aligned crops
-    through rec_model.forward() in batches — same pattern as embed_arcface_batched.
+    Reads aligned 112x112 crops stored by preprocess_ffhq.py and flushes
+    them through the recognition model in batches.
 
     Args:
         arcface:
-          Loaded ArcFaceEmbedding model.
+          Loaded ArcFaceEmbedding model (only the recognition head is used).
         force:
           If True, overwrite any existing HDF5 file. If False, resume by
           skipping stems that are already present.
         batch_size:
-          Number of aligned crops per recognition forward pass.
+          Number of crops per recognition forward pass.
     """
-    from insightface.utils import face_align
-
-    if not LIBREFACE_FFHQ_PATH.exists():
-        logger.error(f"LibreFace parquet not found: {LIBREFACE_FFHQ_PATH}")
+    if not FFHQ_PREPROCESSED_PATH.exists():
+        logger.error(
+            f"Preprocessed HDF5 not found: {FFHQ_PREPROCESSED_PATH}"
+            " — run preprocess_ffhq.py first"
+        )
         return
 
-    image_names = (
-        pd.read_parquet(LIBREFACE_FFHQ_PATH, columns=["image"])["image"]
-        .apply(lambda p: Path(p).name)
-        .tolist()
-    )
-
     rec_model = arcface.app.models["recognition"]
-    det_model = arcface.app.det_model
-
-    batch_stems: list[str] = []
-    # (3, 112, 112) float32 [0, 255] — same layout as embed_arcface_batched input
-    # after its internal [-1,1] → [0,255] conversion
-    batch_crops: list[np.ndarray] = []
-
-    def flush(f: h5py.File) -> int:
-        if not batch_crops:
-            return 0
-        crops = np.stack(batch_crops)
-        embs = rec_model.forward(crops)
-        embs = embs / np.linalg.norm(embs, axis=1, keepdims=True)
-        for stem, emb in zip(batch_stems, embs):
-            f.create_dataset(stem, data=emb, compression="lzf")
-        n = len(batch_stems)
-        batch_stems.clear()
-        batch_crops.clear()
-        return n
-
     FFHQ_EMBEDDINGS_PATH.parent.mkdir(parents=True, exist_ok=True)
     mode = "w" if force else "a"
-    saved = skipped = missing = no_face = 0
+    saved = skipped = 0
 
-    with h5py.File(FFHQ_EMBEDDINGS_PATH, mode) as f:
-        for name in tqdm(image_names, desc="FFHQ embeddings"):
-            stem = Path(name).stem
-            if stem in f:
-                skipped += 1
+    with (
+        h5py.File(FFHQ_PREPROCESSED_PATH, "r") as src,
+        h5py.File(FFHQ_EMBEDDINGS_PATH, mode) as dst,
+    ):
+        stems = list(src.keys())
+        for i in tqdm(range(0, len(stems), batch_size), desc="FFHQ embeddings"):
+            batch_stems = stems[i : i + batch_size]
+            to_embed = [s for s in batch_stems if s not in dst]
+            skipped += len(batch_stems) - len(to_embed)
+            if not to_embed:
                 continue
-            img_path = FFHQ_IMAGES_DIR / name
-            if not img_path.exists():
-                logger.warning(f"Image not found, skipping: {img_path}")
-                missing += 1
-                continue
-            bgr = cv2.imread(str(img_path))
-            _, kpss = det_model.detect(bgr, max_num=1)
-            if kpss is None or len(kpss) == 0:
-                logger.warning(f"No face detected, skipping: {name}")
-                no_face += 1
-                continue
-            aimg = face_align.norm_crop(bgr, landmark=kpss[0])
-            batch_stems.append(stem)
-            batch_crops.append(aimg.transpose(2, 0, 1).astype(np.float32))
-            if len(batch_crops) >= batch_size:
-                saved += flush(f)
-        saved += flush(f)
+            crops = np.stack([src[s][:] for s in to_embed])
+            embs = embed_arcface_batched(
+                rec_model=rec_model, faces=crops, batch_size=len(to_embed)
+            )
+            for stem, emb in zip(to_embed, embs):
+                dst.create_dataset(stem, data=emb, compression="lzf")
+            saved += len(to_embed)
 
-    logger.info(
-        f"Done — saved: {saved}  skipped: {skipped}"
-        f"  missing: {missing}  no_face: {no_face}"
-        f"  -> {FFHQ_EMBEDDINGS_PATH}"
-    )
+    logger.info(f"Done — saved: {saved}  skipped: {skipped}  -> {FFHQ_EMBEDDINGS_PATH}")
 
 
 def main() -> None:
