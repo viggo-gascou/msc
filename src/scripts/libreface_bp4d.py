@@ -1,13 +1,14 @@
 # /// script
 # requires-python = ">=3.11,<3.12"
 # dependencies = [
-#   "dlib",
 #   "libreface",
 #   "loguru",
 #   "pandas",
 #   "pyarrow",
 #   "torch",
 #   "tqdm",
+#   "opencv-python-headless==4.10.0.84",
+#   "numpy<2",
 # ]
 # ///
 """Run LibreFace AU detection + intensity estimation on BP4D, one parquet per task.
@@ -33,10 +34,7 @@ DEFAULT_SEQUENCES_DIR = (
     if HPC_SEQUENCES_DIR.exists()
     else Path("data/BP4D/Sample/Sequences")
 )
-HPC_OUT_DIR = Path("/home/semedit/data/BP4D/libreface")
-DEFAULT_OUT_DIR = (
-    HPC_OUT_DIR if HPC_SEQUENCES_DIR.exists() else Path("data/BP4D/libreface")
-)
+DEFAULT_OUT_DIR = Path("data/BP4D/libreface")
 
 
 def main() -> None:

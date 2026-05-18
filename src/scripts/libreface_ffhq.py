@@ -1,5 +1,5 @@
 # /// script
-# requires-python = ">=3.10"
+# requires-python = ">=3.11,<3.12"
 # dependencies = [
 #   "libreface",
 #   "loguru",
@@ -7,6 +7,8 @@
 #   "pyarrow",
 #   "torch",
 #   "tqdm",
+#   "opencv-python-headless==4.10.0.84",
+#   "numpy<2",
 # ]
 # ///
 """Run LibreFace AU detection + intensity estimation on age-filtered FFHQ images.
@@ -60,7 +62,7 @@ def main() -> None:
         "--chunk-size",
         type=int,
         default=500,
-        help="Images per accumulation chunk before concatenating results (default: 500).",
+        help="Images per accumulation chunk before concatenating (default: 500).",
     )
     args = parser.parse_args()
     run(
@@ -97,7 +99,7 @@ def run(
         "cuda"
         if torch.cuda.is_available()
         else "mps"
-        if torch.backends.mps.is_available()
+        if torch.mps.is_available()
         else "cpu"
     )
     logger.info(f"Device: {device}")
