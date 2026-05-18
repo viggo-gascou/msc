@@ -14,8 +14,10 @@ WATCH_JOBS="${WATCH_JOBS:-}"
 module load uv/0.7.13-GCCcore-14.2.0
 source .venv/bin/activate
 
+set -a; source .env; set +a
+
 while true; do
-    env $(cat .env | xargs) wandb sync "${WANDB_DIR}"/wandb/offline-*
+    wandb sync "${WANDB_DIR}"/wandb/offline-*
 
     if [ -n "$WATCH_JOBS" ]; then
         running=$(squeue --jobs="${WATCH_JOBS//:/ }" --noheader 2>/dev/null | wc -l)
@@ -26,4 +28,4 @@ while true; do
 done
 
 # Final sync once all jobs are done
-env $(cat .env | xargs) wandb sync "${WANDB_DIR}"/wandb/offline-*
+wandb sync "${WANDB_DIR}"/wandb/offline-*
