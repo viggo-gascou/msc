@@ -52,24 +52,11 @@ def train(cfg: Args) -> None:
     if wandb_cfg.enabled:
         accelerator.init_trackers(
             project_name=wandb_cfg.project,
-            config={
-                "learning_rate": opt_cfg.learning_rate,
-                "weight_decay": opt_cfg.weight_decay,
-                "adam_beta1": opt_cfg.adam_beta1,
-                "adam_beta2": opt_cfg.adam_beta2,
-                "adam_eps": opt_cfg.adam_eps,
-                "batch_size": params.dataloader.batch_size,
-                "epochs": params.epochs,
-                "augmentation_proba": params.augmentation_proba,
-                "early_stopping": params.early_stopping,
-                "patience": params.patience,
-                "unet_model": params.unet_model,
-                "au_num_tokens": params.au_num_tokens,
-            },
             init_kwargs={
                 "wandb": {
                     "entity": wandb_cfg.entity,
                     "name": wandb_cfg.run_name or None,
+                    "config": OmegaConf.to_container(cfg, resolve=True),
                 }
             },
         )
