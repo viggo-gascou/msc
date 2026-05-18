@@ -1,7 +1,7 @@
 """AU adapter components for expression-conditioned image generation.
 
-Contains AUEncoder, IdentityAdapter, AUIPAttnProcessor, and helpers for
-setting up UNet processors, loading IP-Adapter weights, and save/load utilities.
+Contains AUEncoder, IdentityAdapter, AUAttnProcessor, and helpers for
+setting up UNet processors and save/load utilities.
 """
 
 import typing as t
@@ -43,7 +43,7 @@ class AUEncoder(nn.Module):
         num_aus: int = NUM_AUS,
         hidden: int = 64,
         dim: int = 768,
-        num_tokens: int = 4,
+        num_tokens: int = 16,
     ) -> None:
         """Initialise AUEncoder.
 
@@ -93,7 +93,7 @@ class AUEncoder(nn.Module):
 
         Batches unconditional (zero AU) and conditional embeddings together
         along dim=0, matching SD's CFG pattern. `au_scale` in
-        `AUIPAttnProcessor` controls expression strength at inference.
+        `AUAttnProcessor` controls expression strength at inference.
 
         Args:
             au_values:
@@ -155,44 +155,6 @@ class IdentityAdapter(nn.Module):
         return au_tokens * (1 + scale) + shift
 
 
-class MLPProjModel(nn.Module):
-    """Project ArcFace embedding to IP-Adapter face tokens.
-
-    Loaded from the pretrained IP-Adapter-FaceID checkpoint (`image_proj` key).
-    Maps (B, id_embeddings_dim) -> (B, num_tokens, cross_attention_dim).
-    """
-
-    def __init__(
-        self,
-        cross_attention_dim: int = 768,
-        id_embeddings_dim: int = 512,
-        num_tokens: int = 16,
-    ) -> None:
-        """Initialise MLPProjModel with given dimensions."""
-        super().__init__()
-        self.num_tokens = num_tokens
-        self.cross_attention_dim = cross_attention_dim
-        self.proj = nn.Sequential(
-            nn.Linear(id_embeddings_dim, id_embeddings_dim * 2),
-            nn.GELU(),
-            nn.Linear(id_embeddings_dim * 2, cross_attention_dim * num_tokens),
-        )
-        self.norm = nn.LayerNorm(cross_attention_dim)
-
-    def forward(self, id_embeds: torch.Tensor) -> torch.Tensor:
-        """Project ArcFace embeddings to face tokens.
-
-        Args:
-            id_embeds: ArcFace embeddings of shape (B, id_embeddings_dim).
-
-        Returns:
-            Face tokens of shape (B, num_tokens, cross_attention_dim).
-        """
-        x = self.proj(id_embeds)
-        x = x.reshape(-1, self.num_tokens, self.cross_attention_dim)
-        return self.norm(x)
-
-
 class SelfAttnProcessor(nn.Module):
     """nn.Module wrapper around AttnProcessor2_0 for self-attention blocks.
 
@@ -214,8 +176,6 @@ class SelfAttnProcessor(nn.Module):
         encoder_hidden_states: torch.Tensor | None = None,
         attention_mask: torch.Tensor | None = None,
         temb: torch.Tensor | None = None,
-        id_embedding: torch.Tensor | None = None,
-        id_scale: float = 1.0,
         au_embedding: torch.Tensor | None = None,
         au_scale: float = 1.0,
         **kwargs,
@@ -230,37 +190,31 @@ class SelfAttnProcessor(nn.Module):
         )
 
 
-class AUIPAttnProcessor(nn.Module):
-    """Full cross-attention processor handling text, IP-Adapter, and AU conditioning.
+class AUAttnProcessor(nn.Module):
+    """Cross-attention processor handling text and AU expression conditioning.
 
     Implements the complete attention forward pass using
-    `F.scaled_dot_product_attention`, combining text, IP-Adapter (identity),
-    and AU (expression) conditioning in one processor with a single `to_out`
-    call. IP-Adapter projections are loaded from pretrained weights;
+    `F.scaled_dot_product_attention`, combining text and AU (expression)
+    conditioning in one processor with a single `to_out` call.
     AU projections are zero-initialised and trained from scratch.
 
     Conditioning is passed via `cross_attention_kwargs` at UNet call time:
         `cross_attention_kwargs={
-            "id_embedding": ...,  # (B, num_id_tokens, dim)
-            "id_scale": 0.6,
             "au_embedding": ...,  # (B, num_au_tokens, dim) or (2B, ...) for CFG
             "au_scale": 1.0,
         }`
     """
 
     def __init__(self, hidden_size: int, cross_attention_dim: int = 768) -> None:
-        """Initialise AUIPAttnProcessor.
+        """Initialise AUAttnProcessor.
 
         Args:
             hidden_size:
               Output dimension of the attention block (from UNet block config).
             cross_attention_dim:
-              Dimension of the cross-attention conditioning (IP and AU tokens).
+              Dimension of the cross-attention conditioning (AU tokens).
         """
         super().__init__()
-        # Identity (IP-Adapter) projections — weights loaded from pretrained checkpoint
-        self.to_k_ip = nn.Linear(cross_attention_dim, hidden_size, bias=False)
-        self.to_v_ip = nn.Linear(cross_attention_dim, hidden_size, bias=False)
         # AU projections — zero-init so they start as a no-op
         self.to_k_au = nn.Linear(cross_attention_dim, hidden_size, bias=False)
         self.to_v_au = nn.Linear(cross_attention_dim, hidden_size, bias=False)
@@ -274,13 +228,11 @@ class AUIPAttnProcessor(nn.Module):
         encoder_hidden_states: torch.Tensor | None = None,
         attention_mask: torch.Tensor | None = None,
         temb: torch.Tensor | None = None,
-        id_embedding: torch.Tensor | None = None,
-        id_scale: float = 1.0,
         au_embedding: torch.Tensor | None = None,
         au_scale: float = 1.0,
         **kwargs,
     ) -> torch.Tensor:
-        """Full attention forward: text + IP-Adapter + AU, single to_out.
+        """Full attention forward: text + AU, single to_out.
 
         Args:
             attn: Parent Attention module.
@@ -288,8 +240,6 @@ class AUIPAttnProcessor(nn.Module):
             encoder_hidden_states: Text key/value states or None for self-attn.
             attention_mask: Optional attention mask.
             temb: Optional timestep embedding for spatial norm.
-            id_embedding: Identity face tokens (B, num_id_tokens, dim).
-            id_scale: Identity conditioning strength.
             au_embedding: AU tokens (B, num_au_tokens, dim) or (2B, ...) for CFG.
             au_scale: Expression conditioning strength.
             kwargs: Additional keyword arguments.
@@ -353,30 +303,6 @@ class AUIPAttnProcessor(nn.Module):
         hidden_states = hidden_states.to(query.dtype)
         # ======== End diffusers (AttnProcessor2_0) ========
 
-        # ======== IP-Adapter: identity conditioning (to_k_ip / to_v_ip) ========
-        if id_embedding is not None:
-            id_embedding = id_embedding.to(dtype=query.dtype)
-            ip_key = (
-                self.to_k_ip(id_embedding)
-                .view(b, -1, attn.heads, head_dim)
-                .transpose(1, 2)
-            )
-            ip_value = (
-                self.to_v_ip(id_embedding)
-                .view(b, -1, attn.heads, head_dim)
-                .transpose(1, 2)
-            )
-            ip_hidden = F.scaled_dot_product_attention(
-                query, ip_key, ip_value, attn_mask=None, dropout_p=0.0, is_causal=False
-            )
-            ip_hidden = (
-                ip_hidden.transpose(1, 2)
-                .reshape(b, -1, attn.heads * head_dim)
-                .to(query.dtype)
-            )
-            hidden_states = hidden_states + id_scale * ip_hidden
-        # ======== End IP-Adapter ========
-
         # ======== AU adapter: expression conditioning (to_k_au / to_v_au) ========
         if au_embedding is not None:
             au_embedding = au_embedding.to(dtype=query.dtype)
@@ -418,7 +344,7 @@ class AUIPAttnProcessor(nn.Module):
 
 
 def setup_unet_processors(unet: UNet2DConditionModel) -> nn.ModuleDict:
-    """Replace all cross-attention processors with AUIPAttnProcessor.
+    """Replace all cross-attention processors with AUAttnProcessor.
 
     Self-attention (attn1) blocks get the standard AttnProcessor2_0.
     Uses UNet block config to get the correct hidden_size per block.
@@ -427,10 +353,10 @@ def setup_unet_processors(unet: UNet2DConditionModel) -> nn.ModuleDict:
         unet: The UNet to configure.
 
     Returns:
-        ModuleDict of AUIPAttnProcessors keyed by sanitised block name.
+        ModuleDict of AUAttnProcessors keyed by sanitised block name.
     """
     procs: dict[str, t.Any] = {}
-    au_procs: dict[str, AUIPAttnProcessor] = {}
+    au_procs: dict[str, AUAttnProcessor] = {}
 
     for name in unet.attn_processors:
         cross_attention_dim = (
@@ -450,7 +376,7 @@ def setup_unet_processors(unet: UNet2DConditionModel) -> nn.ModuleDict:
             hidden_size = unet.config.block_out_channels[-1]
 
         if cross_attention_dim is not None:
-            proc = AUIPAttnProcessor(
+            proc = AUAttnProcessor(
                 hidden_size=hidden_size, cross_attention_dim=cross_attention_dim
             )
             au_procs[name] = proc
@@ -460,39 +386,6 @@ def setup_unet_processors(unet: UNet2DConditionModel) -> nn.ModuleDict:
 
     unet.set_attn_processor(procs)
     return nn.ModuleDict({k.replace(".", "_"): v for k, v in au_procs.items()})
-
-
-def load_ip_adapter_weights(
-    unet: UNet2DConditionModel, path: str, num_tokens: int = 16
-) -> "MLPProjModel":
-    """Load pretrained IP-Adapter-FaceID weights and return the face projector.
-
-    Loads `to_k_ip`/`to_v_ip` into the UNet's `AUIPAttnProcessor`s via
-    `ModuleList + strict=False` (self-attention `SelfAttnProcessor`s are
-    skipped automatically). Builds and returns an `MLPProjModel` loaded with
-    the checkpoint's `image_proj` weights.
-
-    Args:
-        unet: UNet with processors set up via `setup_unet_processors`.
-        path: Path to the IP-Adapter-FaceID `.bin` checkpoint.
-        num_tokens: Number of face tokens (16 for portrait-v11).
-
-    Returns:
-        `MLPProjModel` with pretrained weights, ready for inference.
-    """
-    state_dict = torch.load(path, map_location="cpu", weights_only=True)
-    # Load to_k_ip / to_v_ip — strict=False skips SelfAttnProcessors that
-    # have no IP-Adapter keys in the checkpoint.
-    ip_layers = nn.ModuleList(unet.attn_processors.values())
-    ip_layers.load_state_dict(state_dict["ip_adapter"], strict=False)
-    # Build the face projector and load its pretrained weights
-    face_proj = MLPProjModel(
-        cross_attention_dim=unet.config.cross_attention_dim,
-        id_embeddings_dim=512,
-        num_tokens=num_tokens,
-    )
-    face_proj.load_state_dict(state_dict["image_proj"])
-    return face_proj
 
 
 def prefixed(
@@ -527,35 +420,28 @@ def save_au_adapter(
         unet: UNet model (LoRA weights extracted if present).
         au_encoder: Trained AUEncoder.
         identity_adapter: Trained IdentityAdapter.
-        au_procs: Trained AUIPAttnProcessors (as ModuleDict).
+        au_procs: Trained AUAttnProcessors (as ModuleDict).
         path: Destination path for the safetensors file.
     """
-    procs_sd = {
-        k: v
-        for k, v in au_procs.state_dict().items()
-        if not k.endswith(("to_k_ip.weight", "to_v_ip.weight"))
-    }
     lora_sd = {k: v for k, v in unet.state_dict().items() if "lora_" in k}
     flat: dict[str, torch.Tensor] = {}
     flat.update(prefixed(au_encoder.state_dict(), "au_encoder"))
     flat.update(prefixed(identity_adapter.state_dict(), "identity_adapter"))
-    flat.update(prefixed(procs_sd, "au_procs"))
+    flat.update(prefixed(au_procs.state_dict(), "au_procs"))
     flat.update(prefixed(lora_sd, "lora"))
     save_file(tensors=flat, filename=path)
 
 
 def load_au_adapter(
-    path: str, unet: UNet2DConditionModel, ip_adapter_path: str
+    path: str, unet: UNet2DConditionModel
 ) -> tuple[AUEncoder, IdentityAdapter, nn.ModuleDict]:
     """Load AU adapter weights from a safetensors file.
 
-    Sets up fresh AUIPAttnProcessors, loads IP-Adapter weights, then loads
-    AU adapter weights on top.
+    Sets up fresh AUAttnProcessors and restores AU adapter weights.
 
     Args:
         path: Path to the safetensors file produced by save_au_adapter.
         unet: The UNet to inject processors into.
-        ip_adapter_path: Path to the IP-Adapter checkpoint.
 
     Returns:
         Tuple of (au_encoder, identity_adapter, au_procs).
@@ -601,7 +487,6 @@ def load_au_adapter(
         )
 
     au_procs = setup_unet_processors(unet)
-    load_ip_adapter_weights(unet, ip_adapter_path)
     au_procs.load_state_dict(_strip(flat, "au_procs"), strict=False)
     if lora_sd:
         unet.load_state_dict(lora_sd, strict=False)

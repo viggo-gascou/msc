@@ -136,6 +136,10 @@ class Params:
         dataset:
             Which dataset to use. 'bp4d' uses BP4DDataset; 'ffhq' uses FFHQDataset
             and forces reconstruction mode. Defaults to 'bp4d'.
+        au_num_tokens:
+            Number of AU conditioning tokens produced by AUEncoder. More tokens
+            give the model richer expression capacity at a small attention cost.
+            Defaults to 16.
     """
 
     optimizer: OptimizerParams
@@ -160,22 +164,7 @@ class Params:
     reconstruction: bool = False
     resume_from: str | None = None
     dataset: str = "bp4d"
-
-
-@dataclass
-class IPAdapterConfig:
-    """Configuration for the IP adapter.
-
-    Attributes:
-        repo:
-            The IP adapter repo to use. Defaults to 'h94/IP-Adapter-FaceID'.
-        weight_id:
-            The IP adapter weights file to use.
-            Defaults to 'ip-adapter-faceid-portrait-v11_sd15.bin'.
-    """
-
-    repo: str = "h94/IP-Adapter-FaceID"
-    weight_id: str = "ip-adapter-faceid-portrait-v11_sd15.bin"
+    au_num_tokens: int = 16
 
 
 @dataclass
@@ -206,8 +195,6 @@ class Args:
     Attributes:
         parameters:
             Project parameters
-        ip_adapter:
-            IP-Adapter configuration
         wandb:
             Weights & Biases configuration
         log_level:
@@ -215,6 +202,5 @@ class Args:
     """
 
     parameters: Params
-    ip_adapter: IPAdapterConfig
     wandb: WandBConfig
     log_level: LogLevel = LogLevel.INFO

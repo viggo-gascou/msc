@@ -1,4 +1,4 @@
-"""FaceID IP-Adapter + AU adapter training loop on BP4D."""
+"""AU adapter training loop on BP4D/FFHQ."""
 
 import os
 from datetime import datetime
@@ -31,13 +31,12 @@ from msc.train_utils import (
 
 @cli()
 def train(cfg: Args) -> None:
-    """Train AU adapter on BP4D with FaceID IP-Adapter conditioning."""
+    """Train AU adapter on BP4D/FFHQ."""
     load_dotenv()
     set_seed(RANDOM_SEED)
 
     params = cfg.parameters
     opt_cfg = params.optimizer
-    ip_cfg = cfg.ip_adapter
     wandb_cfg = cfg.wandb
 
     accelerator = Accelerator(
@@ -65,8 +64,7 @@ def train(cfg: Args) -> None:
                 "early_stopping": params.early_stopping,
                 "patience": params.patience,
                 "unet_model": params.unet_model,
-                "ip_adapter_repo": ip_cfg.repo,
-                "ip_adapter_weight_id": ip_cfg.weight_id,
+                "au_num_tokens": params.au_num_tokens,
             },
             init_kwargs={
                 "wandb": {
@@ -76,9 +74,7 @@ def train(cfg: Args) -> None:
             },
         )
 
-    unet, vae, text_encoder, tokenizer, scheduler, au_procs, face_proj = load_model(
-        params, ip_cfg
-    )
+    unet, vae, text_encoder, tokenizer, scheduler, au_procs = load_model(params)
     unet, vae, text_encoder, au_procs = freeze_model_layers(
         unet, vae, text_encoder, au_procs, params.lora
     )
@@ -90,11 +86,10 @@ def train(cfg: Args) -> None:
     weight_dtype = {"fp16": torch.float16, "bf16": torch.bfloat16}.get(
         accelerator.mixed_precision, torch.float32
     )
-    for model in [vae, text_encoder, face_proj]:
+    for model in [vae, text_encoder]:
         model.to(device, dtype=weight_dtype)
-    face_proj.requires_grad_(False)
 
-    au_encoder = AUEncoder()
+    au_encoder = AUEncoder(num_tokens=params.au_num_tokens)
     identity_adapter = IdentityAdapter()
 
     optimizer = torch.optim.AdamW(
@@ -172,7 +167,6 @@ def train(cfg: Args) -> None:
             scheduler,
             au_encoder,
             identity_adapter,
-            face_proj,
             optimizer,
             train_loader,
             accelerator,
@@ -187,7 +181,6 @@ def train(cfg: Args) -> None:
             scheduler,
             au_encoder,
             identity_adapter,
-            face_proj,
             val_loader,
             accelerator,
             device,
@@ -245,7 +238,6 @@ def train(cfg: Args) -> None:
         scheduler,
         au_encoder,
         identity_adapter,
-        face_proj,
         test_loader,
         accelerator,
         device,

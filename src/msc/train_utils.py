@@ -11,7 +11,7 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 from transformers import CLIPTextModel, CLIPTokenizer
 
-from .au_adapter import AUEncoder, IdentityAdapter, MLPProjModel, prefixed
+from .au_adapter import AUEncoder, IdentityAdapter, prefixed
 from .config import Params
 
 
@@ -24,7 +24,6 @@ def forward_batch(
     scheduler: DDIMScheduler | LMSDiscreteScheduler | PNDMScheduler,
     au_encoder: AUEncoder,
     identity_adapter: IdentityAdapter,
-    face_proj: MLPProjModel,
     device: torch.device,
     params: Params,
 ) -> torch.Tensor:
@@ -32,14 +31,13 @@ def forward_batch(
 
     Args:
         batch: BP4DSample batch from the dataloader.
-        unet: UNet2DConditionModel with AUIPAttnProcessors.
+        unet: UNet2DConditionModel with AUAttnProcessors.
         vae: VAE encoder/decoder.
         text_encoder: CLIP text encoder.
         tokenizer: CLIP tokenizer.
         scheduler: Noise scheduler.
         au_encoder: AU conditioning encoder.
         identity_adapter: Identity-conditioned AU token adapter.
-        face_proj: Pretrained MLP projecting ArcFace → IP-Adapter face tokens.
         device: Target device.
         params: Training parameters.
 
@@ -48,9 +46,8 @@ def forward_batch(
         source) and the target latents, optionally weighted by Min-SNR.
     """
     vae_dtype = next(vae.parameters()).dtype
-    proj_dtype = next(face_proj.parameters()).dtype
     src_pixels = batch["image"].to(device=device, dtype=vae_dtype)
-    arcface_embeds = batch["arcface"].to(device=device, dtype=proj_dtype)
+    arcface_embeds = batch["arcface"].to(device=device, dtype=vae_dtype)
 
     if params.reconstruction:
         # Reconstruct source from itself; condition on source AUs so the model
@@ -75,7 +72,6 @@ def forward_batch(
 
     au_tokens = au_encoder(au_values)
     au_tokens = identity_adapter(au_tokens, arcface_embeds)
-    id_tokens = face_proj(arcface_embeds)
 
     src_latents = (
         vae.encode(src_pixels).latent_dist.sample() * vae.config.scaling_factor
@@ -101,12 +97,7 @@ def forward_batch(
         sample=noisy_src,
         timestep=timesteps,
         encoder_hidden_states=cond,
-        cross_attention_kwargs={
-            "id_embedding": id_tokens,
-            "id_scale": 0.0,
-            "au_embedding": au_tokens,
-            "au_scale": 1.0,
-        },
+        cross_attention_kwargs={"au_embedding": au_tokens, "au_scale": 1.0},
     ).sample
 
     # Recover the implied clean image from the noisy source and predicted noise.
@@ -157,7 +148,6 @@ def train_one_epoch(
     scheduler: DDIMScheduler | LMSDiscreteScheduler | PNDMScheduler,
     au_encoder: AUEncoder,
     identity_adapter: IdentityAdapter,
-    face_proj: MLPProjModel,
     optimizer: torch.optim.Optimizer,
     loader: DataLoader,
     accelerator: Accelerator,
@@ -174,7 +164,6 @@ def train_one_epoch(
         scheduler: Noise scheduler.
         au_encoder: Trainable AU encoder.
         identity_adapter: Trainable identity adapter.
-        face_proj: Frozen face projector (ArcFace → IP-Adapter tokens).
         optimizer: AdamW optimizer.
         loader: Training dataloader.
         accelerator: Accelerate wrapper.
@@ -204,7 +193,6 @@ def train_one_epoch(
                 scheduler,
                 au_encoder,
                 identity_adapter,
-                face_proj,
                 device,
                 params,
             )
@@ -230,7 +218,6 @@ def validate(
     scheduler: DDIMScheduler | LMSDiscreteScheduler | PNDMScheduler,
     au_encoder: AUEncoder,
     identity_adapter: IdentityAdapter,
-    face_proj: MLPProjModel,
     loader: DataLoader,
     accelerator: Accelerator,
     device: torch.device,
@@ -246,7 +233,6 @@ def validate(
         scheduler: Noise scheduler.
         au_encoder: AU encoder.
         identity_adapter: Identity adapter.
-        face_proj: Face projector.
         loader: Validation dataloader.
         accelerator: Accelerator.
         device: Target device
@@ -274,7 +260,6 @@ def validate(
                 scheduler,
                 au_encoder,
                 identity_adapter,
-                face_proj,
                 device,
                 params,
             )
@@ -292,7 +277,6 @@ def evaluate(
     scheduler: DDIMScheduler | LMSDiscreteScheduler | PNDMScheduler,
     au_encoder: AUEncoder,
     identity_adapter: IdentityAdapter,
-    face_proj: MLPProjModel,
     loader: DataLoader,
     accelerator: Accelerator,
     device: torch.device,
@@ -308,7 +292,6 @@ def evaluate(
         scheduler: Noise scheduler.
         au_encoder: AU encoder.
         identity_adapter: Identity adapter.
-        face_proj: Face projector.
         loader: Test dataloader.
         accelerator: Accelerator.
         device: Target device.
@@ -336,7 +319,6 @@ def evaluate(
                 scheduler,
                 au_encoder,
                 identity_adapter,
-                face_proj,
                 device,
                 params,
             )
@@ -373,16 +355,11 @@ def save_checkpoint(
         best_val_loss: Best validation loss seen so far.
         patience_counter: Current early-stopping patience count.
     """
-    procs_sd = {
-        k: v
-        for k, v in au_procs.state_dict().items()
-        if not k.endswith(("to_k_ip.weight", "to_v_ip.weight"))
-    }
     lora_sd = {k: v for k, v in unet.state_dict().items() if "lora_" in k}
     flat: dict[str, torch.Tensor] = {}
     flat.update(prefixed(au_encoder.state_dict(), "au_encoder"))
     flat.update(prefixed(identity_adapter.state_dict(), "identity_adapter"))
-    flat.update(prefixed(procs_sd, "au_procs"))
+    flat.update(prefixed(au_procs.state_dict(), "au_procs"))
     flat.update(prefixed(lora_sd, "lora"))
 
     torch.save(

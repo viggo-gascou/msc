@@ -4,28 +4,22 @@ import typing as t
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from .inference_pipeline import AUIPAdapterPipeline
+    from .inference_pipeline import AUAdapterPipeline
 
 import torch
 from diffusers import StableDiffusionImg2ImgPipeline, StableDiffusionPipeline
 from diffusers.models import AutoencoderKL, UNet2DConditionModel
 from diffusers.schedulers import DDIMScheduler, LMSDiscreteScheduler, PNDMScheduler
-from huggingface_hub import hf_hub_download
 from peft import LoraConfig
 from torch import nn
 from transformers import CLIPTextModel, CLIPTokenizer
 
-from .au_adapter import (
-    MLPProjModel,
-    load_au_adapter,
-    load_ip_adapter_weights,
-    setup_unet_processors,
-)
-from .config import IPAdapterConfig, LoraParams, Params
+from .au_adapter import load_au_adapter, setup_unet_processors
+from .config import LoraParams, Params
 
 
 def load_model(
-    params: Params, ip_cfg: IPAdapterConfig
+    params: Params,
 ) -> tuple[
     UNet2DConditionModel,
     AutoencoderKL,
@@ -33,19 +27,15 @@ def load_model(
     CLIPTokenizer,
     t.Union[DDIMScheduler, LMSDiscreteScheduler, PNDMScheduler],
     nn.ModuleDict,
-    MLPProjModel,
 ]:
-    """Load the pipeline and set up unified AU+IP-Adapter attention processors.
+    """Load the pipeline and set up AU attention processors.
 
     Args:
         params:
             Model parameters.
-        ip_cfg:
-            IP adapter configuration.
 
     Returns:
-        A tuple of (unet, vae, text_encoder, tokenizer, scheduler, au_procs,
-        face_proj).
+        A tuple of (unet, vae, text_encoder, tokenizer, scheduler, au_procs).
 
     Raises:
         ValueError: If the pipeline fails to load.
@@ -65,33 +55,22 @@ def load_model(
         pipeline.scheduler
     )
 
-    # Replace all cross-attention processors with unified AU+IP-Adapter ones
     au_procs = setup_unet_processors(unet)
 
-    # Load pretrained IP-Adapter weights; get back the face projector
-    ip_adapter_path = hf_hub_download(repo_id=ip_cfg.repo, filename=ip_cfg.weight_id)
-    face_proj = load_ip_adapter_weights(unet, ip_adapter_path)
-
-    return unet, vae, text_encoder, tokenizer, scheduler, au_procs, face_proj
+    return unet, vae, text_encoder, tokenizer, scheduler, au_procs
 
 
 def load_inference_pipeline(
-    params: Params,
-    ip_cfg: IPAdapterConfig,
-    au_ckpt_path: str,
-    device: str = "cuda",
-    load_arcface: bool = True,
-) -> "AUIPAdapterPipeline":
-    """Load a trained AUIPAdapterPipeline ready for inference.
+    params: Params, au_ckpt_path: str, device: str = "cuda", load_arcface: bool = True
+) -> "AUAdapterPipeline":
+    """Load a trained AUAdapterPipeline ready for inference.
 
-    Loads the base Stable Diffusion weights, installs AU+IP-Adapter processors,
+    Loads the base Stable Diffusion weights, installs AU processors,
     and restores trained AU adapter weights from a checkpoint.
 
     Args:
         params:
             Model parameters (`unet_model`).
-        ip_cfg:
-            IP-Adapter config (`repo`, `weight_id`).
         au_ckpt_path:
             Path to the AU adapter safetensors checkpoint produced by
             `save_au_adapter`.
@@ -103,12 +82,12 @@ def load_inference_pipeline(
             arcface embeddings are supplied directly at inference time).
 
     Returns:
-        `AUIPAdapterPipeline` with all weights loaded.
+        `AUAdapterPipeline` with all weights loaded.
 
     Raises:
         ValueError: If the base pipeline fails to load.
     """
-    from .inference_pipeline import AUIPAdapterPipeline
+    from .inference_pipeline import AUAdapterPipeline
 
     dtype = torch.bfloat16 if device == "cuda" else torch.float32
     pipeline = StableDiffusionImg2ImgPipeline.from_pretrained(
@@ -127,16 +106,7 @@ def load_inference_pipeline(
 
     pipeline.scheduler = DDIMScheduler.from_config(pipeline.scheduler.config)
 
-    ip_adapter_path = hf_hub_download(repo_id=ip_cfg.repo, filename=ip_cfg.weight_id)
-
-    # load_au_adapter sets up processors, loads IP-Adapter weights, and restores
-    # AU adapter weights — but doesn't return face_proj.
-    au_encoder, identity_adapter, _ = load_au_adapter(
-        au_ckpt_path, pipeline.unet, ip_adapter_path
-    )
-    # Load face_proj from the IP-Adapter checkpoint (idempotent, weights already
-    # in the UNet from load_au_adapter above).
-    face_proj = load_ip_adapter_weights(pipeline.unet, ip_adapter_path)
+    au_encoder, identity_adapter, _ = load_au_adapter(au_ckpt_path, pipeline.unet)
 
     arcface_extractor = None
     if load_arcface:
@@ -148,23 +118,22 @@ def load_inference_pipeline(
             providers=[ONNXProvider.CUDA, ONNXProvider.CPU], ctx_id=ctx_id
         )
 
-    auip_pipeline = AUIPAdapterPipeline.from_pipeline(
-        pipeline, au_encoder, identity_adapter, face_proj, arcface_extractor
+    au_pipeline = AUAdapterPipeline.from_pipeline(
+        pipeline, au_encoder, identity_adapter, arcface_extractor
     )
-    auip_pipeline.to(device)
-    # diffusers' .to() only moves registered pipeline components; move the
-    # custom modules explicitly so all tensors land on the same device/dtype.
-    auip_pipeline.au_encoder = auip_pipeline.au_encoder.to(device=device, dtype=dtype)
-    auip_pipeline.identity_adapter = auip_pipeline.identity_adapter.to(
+    au_pipeline.to(device)
+    # diffusers' .to() only moves registered pipeline components; move custom
+    # modules explicitly so all tensors land on the same device/dtype.
+    au_pipeline.au_encoder = au_pipeline.au_encoder.to(device=device, dtype=dtype)
+    au_pipeline.identity_adapter = au_pipeline.identity_adapter.to(
         device=device, dtype=dtype
     )
-    auip_pipeline.face_proj = auip_pipeline.face_proj.to(device=device, dtype=dtype)
-    # AUIPAttnProcessor weights (to_k_ip, to_v_ip, to_k_au, to_v_au) are not
-    # registered as UNet submodules by diffusers, so unet.to() misses them.
-    for proc in auip_pipeline.unet.attn_processors.values():
+    # AUAttnProcessor weights (to_k_au, to_v_au) are not registered as UNet
+    # submodules by diffusers, so unet.to() misses them.
+    for proc in au_pipeline.unet.attn_processors.values():
         if isinstance(proc, nn.Module):
             proc.to(device=device, dtype=dtype)
-    return auip_pipeline
+    return au_pipeline
 
 
 def freeze_model_layers(

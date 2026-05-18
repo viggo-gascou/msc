@@ -3,7 +3,6 @@
 from collections import defaultdict
 from pathlib import Path
 
-import numpy as np
 import pandas as pd
 
 from ...constants import BP4D_INDEX_PATH
@@ -27,7 +26,6 @@ def load_index(path: Path | None = None) -> pd.DataFrame:
     if not p.exists():
         raise FileNotFoundError(f"Index not found: {p} — run build_bp4d_index.py first")
     return pd.read_parquet(p)
-
 
 
 def resolve_frame_path(
