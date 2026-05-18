@@ -17,7 +17,7 @@ from msc.au_adapter import AUEncoder, IdentityAdapter, save_au_adapter
 from msc.cli import cli
 from msc.config import Args
 from msc.constants import RANDOM_SEED
-from msc.data.dataset import get_dataloaders
+from msc.data import get_dataloaders
 from msc.log_utils import setup_file_logging
 from msc.model_utils import freeze_model_layers, load_model
 from msc.train_utils import (
@@ -109,10 +109,14 @@ def train(cfg: Args) -> None:
         weight_decay=opt_cfg.weight_decay,
     )
 
+    if params.dataset == "ffhq":
+        params.reconstruction = True
     train_loader, val_loader, test_loader = get_dataloaders(
-        params.dataloader, params.augmentation_proba
+        dataset=params.dataset,
+        dataloader_params=params.dataloader,
+        augmentation_proba=params.augmentation_proba,
     )
-    if not params.reconstruction:
+    if params.dataset == "bp4d" and not params.reconstruction:
         # Fix val/test at the end-of-curriculum distance so they are comparable
         # to late-stage training difficulty, not the easier random-pair baseline.
         val_loader.dataset.set_min_au_distance(params.min_au_distance)

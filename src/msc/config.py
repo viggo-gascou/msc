@@ -128,11 +128,14 @@ class Params:
             If True, use a reconstruction objective (denoise source back to
             itself conditioned on source AUs) instead of the transfer objective
             (denoise source toward a different target frame). Disables the frame
-            distance curriculum. Defaults to False.
+            distance curriculum. Defaults to False. Always True when dataset='ffhq'.
         resume_from:
             Path to a checkpoint .pt file to resume training from. When set,
             training resumes from that checkpoint's epoch and optimizer state.
             Defaults to None (start from scratch).
+        dataset:
+            Which dataset to use. 'bp4d' uses BP4DDataset; 'ffhq' uses FFHQDataset
+            and forces reconstruction mode. Defaults to 'bp4d'.
     """
 
     optimizer: OptimizerParams
@@ -156,6 +159,7 @@ class Params:
     min_au_distance: float = 1.0
     reconstruction: bool = False
     resume_from: str | None = None
+    dataset: str = "bp4d"
 
 
 @dataclass

@@ -103,7 +103,7 @@ def forward_batch(
         encoder_hidden_states=cond,
         cross_attention_kwargs={
             "id_embedding": id_tokens,
-            "id_scale": 1.0,
+            "id_scale": 0.0,
             "au_embedding": au_tokens,
             "au_scale": 1.0,
         },
