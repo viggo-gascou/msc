@@ -1,144 +1,52 @@
 """PyTorch Dataset for BP4D face sequences."""
 
+import collections.abc as c
+import typing as t
 from collections import defaultdict
 from pathlib import Path
-from typing import Callable, NotRequired, TypedDict
 
 import h5py
 import numpy as np
 import torch
-from torch.utils.data import DataLoader
 from torchvision.datasets import VisionDataset
 from torchvision.io import ImageReadMode, decode_image
-from torchvision.transforms import v2
 from torchvision.tv_tensors import Image as TVImage
 
-from ..au_adapter import AU_SCALE
-from ..config import DataloaderParams
-from ..constants import (
+from ...au_adapter import AU_SCALE
+from ...constants import (
     BP4D_AU_COLUMN_MAP,
     BP4D_AU_COLUMNS,
     BP4D_EMBEDDINGS_DIR,
     BP4D_PREPROCESSED_DIR,
     BP4D_SEQUENCES_DIR,
-    BP4D_TEST_INDEX_PATH,
-    BP4D_TRAIN_INDEX_PATH,
-    BP4D_VAL_INDEX_PATH,
 )
-from .bp4d import load_index, resolve_frame_path
+from .utils import load_index, resolve_frame_path
 
 
-def get_transforms(
-    augmentation_proba: float, resolution: int = 512
-) -> tuple[v2.Compose, v2.Compose]:
-    """Return train and val/test transforms for BP4D images.
-
-    Both resize and center-crop to the target resolution, convert to float
-    [0, 1], and normalise to [-1, 1].
-
-    Args:
-        augmentation_proba: Probability of applying data augmentations
-        resolution: Target image resolution (width and height)
-
-    Returns:
-        (train_transforms, val_transforms)
-    """
-    train_transforms = v2.Compose(
-        [
-            v2.Resize(resolution),
-            v2.ToDtype(torch.float32, scale=True),
-            v2.Normalize([0.5, 0.5, 0.5], [0.5, 0.5, 0.5]),
-        ]
-    )
-    val_transforms = v2.Compose(
-        [
-            v2.Resize(resolution),
-            v2.ToDtype(torch.float32, scale=True),
-            v2.Normalize([0.5, 0.5, 0.5], [0.5, 0.5, 0.5]),
-        ]
-    )
-    return train_transforms, val_transforms
-
-
-def get_dataloaders(
-    dataloader_params: DataloaderParams, augmentation_proba: float
-) -> tuple[DataLoader, DataLoader, DataLoader]:
-    """Return train, validation, and test dataloaders for BP4D.
-
-    Args:
-        dataloader_params: Dataloader configuration (batch size, num workers).
-        augmentation_proba: Probability of applying data augmentations.
-
-    Returns:
-        A tuple of train, validation, and test dataloaders.
-    """
-    train_transforms, val_test_transforms = get_transforms(augmentation_proba)
-
-    train_ds = BP4DDataset(index_path=BP4D_TRAIN_INDEX_PATH, transform=train_transforms)
-    val_ds = BP4DDataset(index_path=BP4D_VAL_INDEX_PATH, transform=val_test_transforms)
-    test_ds = BP4DDataset(
-        index_path=BP4D_TEST_INDEX_PATH, transform=val_test_transforms
-    )
-    pin_memory = dataloader_params.num_workers > 0
-    persistent_workers = dataloader_params.num_workers > 0
-    train_loader = DataLoader(
-        train_ds,
-        batch_size=dataloader_params.batch_size,
-        shuffle=True,
-        num_workers=dataloader_params.num_workers,
-        pin_memory=pin_memory,
-        persistent_workers=persistent_workers,
-    )
-    val_loader = DataLoader(
-        val_ds,
-        batch_size=dataloader_params.batch_size,
-        num_workers=dataloader_params.num_workers,
-        pin_memory=pin_memory,
-        persistent_workers=persistent_workers,
-    )
-    test_loader = DataLoader(
-        test_ds,
-        batch_size=dataloader_params.batch_size,
-        num_workers=dataloader_params.num_workers,
-        pin_memory=pin_memory,
-        persistent_workers=persistent_workers,
-    )
-    return train_loader, val_loader, test_loader
-
-
-class BP4DSample(TypedDict):
+class BP4DSample(t.TypedDict):
     """A single BP4D sample."""
 
     subject: str
     task: str
     frame: int
 
-    # Raw image loaded from disk, shape (3, H, W) uint8 RGB
     image: TVImage
-
-    # Identity embeddings, shape (512,)
     arcface: torch.Tensor
     adaface: torch.Tensor
-
-    # AU occurrence labels, shape (len(BP4D_AU_COLUMNS),), float32, NaN for missing
     aus: torch.Tensor
 
-    # Target frame from the same subject/task
     target_image: TVImage
     target_aus: torch.Tensor
 
-    # Aligned 112x112 face crop in [-1, 1], shape (3, 112, 112) — optional,
-    # only needed when computing AdaFace loss on-the-fly during training
-    face: NotRequired[torch.Tensor | None]
+    face: t.NotRequired[torch.Tensor | None]
 
 
 class BP4DDataset(VisionDataset):
     """BP4D frame-level dataset.
 
     Each item is one coded frame for one subject/task. The raw image is always
-    loaded from disk as the primary output.
-    The aligned face crop is optional — only needed when computing AdaFace loss
-    on the generated image on-the-fly during training.
+    loaded from disk as the primary output. The aligned face crop is optional —
+    only needed when computing AdaFace loss on the generated image on-the-fly.
 
     HDF5 files are opened lazily per worker to be compatible with
     torch DataLoader multiprocessing.
@@ -149,18 +57,19 @@ class BP4DDataset(VisionDataset):
         subjects:
           Which subject IDs to include (e.g. ['F001', 'M001']). None = all.
         load_face:
-          If True, also load the aligned 112x112 crop from the preprocessed
-          HDF5. Off by default — only enable when the training loop needs it.
+          If True, also load the aligned 112x112 crop from the preprocessed HDF5.
         transform:
           Transform applied to the raw image tensor.
         target_transform:
           Transform applied to the AU label tensor.
         sequences_dir:
-          Override for the raw sequences directory (default: BP4D_SEQUENCES_DIR).
+          Override for the raw sequences directory.
         preprocessed_dir:
           Override for the preprocessed HDF5 directory.
         embeddings_dir:
           Override for the embeddings HDF5 directory.
+        index_path:
+          Override for the index parquet path.
     """
 
     def __init__(
@@ -168,8 +77,8 @@ class BP4DDataset(VisionDataset):
         tasks: list[str] | None = None,
         subjects: list[str] | None = None,
         load_face: bool = False,
-        transform: Callable | None = None,
-        target_transform: Callable | None = None,
+        transform: c.Callable | None = None,
+        target_transform: c.Callable | None = None,
         sequences_dir: Path = BP4D_SEQUENCES_DIR,
         preprocessed_dir: Path = BP4D_PREPROCESSED_DIR,
         embeddings_dir: Path = BP4D_EMBEDDINGS_DIR,
@@ -213,8 +122,6 @@ class BP4DDataset(VisionDataset):
 
         self.index = index.reset_index(drop=True)
 
-        # Each entry is (dataset_idx, 0-based frame number, raw AU vector) to
-        # allow fast on-the-fly distance filtering in __getitem__.
         self.seq_index: defaultdict[
             tuple[str, str], list[tuple[int, int, np.ndarray]]
         ] = defaultdict(list)
@@ -233,19 +140,14 @@ class BP4DDataset(VisionDataset):
                 (i, int(row.frame) - 1, au_vec)
             )
 
-        # Subject-level view for cross-task target sampling — same identity,
-        # any task, giving broader expression diversity than within-task only.
         self.subject_index: defaultdict[str, list[tuple[int, int, np.ndarray]]] = (
             defaultdict(list)
         )
         for (subject, _task), entries in self.seq_index.items():
             self.subject_index[subject].extend(entries)
 
-        # Minimum AU L1 distance between source and target for curriculum learning.
-        # Set to 0 to disable filtering.
         self.min_au_distance: float = 0.0
 
-        # HDF5 handles — opened lazily in _open_h5 to support multiprocessing
         self.preprocessed: dict[str, h5py.File] = {}
         self.embeddings: dict[str, h5py.File] = {}
 
@@ -254,8 +156,8 @@ class BP4DDataset(VisionDataset):
 
         Args:
             distance:
-                Minimum AU L1 distance between source and target normalised AU
-                vectors. Set to 0 to disable filtering.
+              Minimum AU L1 distance between source and target normalised AU
+              vectors. Set to 0 to disable filtering.
         """
         self.min_au_distance = distance
 
@@ -267,7 +169,8 @@ class BP4DDataset(VisionDataset):
         """Return the sample at the given index.
 
         Args:
-            index: Index of the sample to return.
+            index:
+              Index of the sample to return.
 
         Returns:
             The sample at the given index.
@@ -276,7 +179,7 @@ class BP4DDataset(VisionDataset):
         subject: str = row["subject"]
         task: str = row["task"]
         au_frame: int = int(row["frame"])
-        img_frame = au_frame - 1  # AU 1-based → image 0-based
+        img_frame = au_frame - 1
 
         pre_f = self.open_h5(
             cache=self.preprocessed, path=self.preprocessed_dir / f"{task}.h5"
@@ -285,7 +188,6 @@ class BP4DDataset(VisionDataset):
             cache=self.embeddings, path=self.embeddings_dir / f"{task}.h5"
         )
 
-        # Locate this frame in the HDF5 arrays via the stored indices dataset
         indices: np.ndarray = pre_f[subject]["indices"][:]
         pos = int(np.searchsorted(indices, img_frame))
 
@@ -297,15 +199,12 @@ class BP4DDataset(VisionDataset):
             dtype=torch.float32,
         ) * torch.tensor(AU_SCALE)
 
-        image = self.load_raw(subject, task, img_frame)
+        image = self.load_raw(subject=subject, task=task, img_frame=img_frame)
         if self.transform is not None:
             image = self.transform(image)
-
         if self.target_transform is not None:
             aus = self.target_transform(aus)
 
-        # Sample a target frame from any task for this subject, respecting the
-        # minimum AU distance.
         candidates = self.subject_index[subject]
         if self.min_au_distance > 0:
             src_aus = np.nan_to_num(
@@ -319,14 +218,15 @@ class BP4DDataset(VisionDataset):
                 nan=0.0,
             )
             valid = [
-                (idx, f, aus)
-                for idx, f, aus in candidates
-                if float(np.abs(src_aus - aus).sum()) >= self.min_au_distance
+                (idx, f, aus_vec)
+                for idx, f, aus_vec in candidates
+                if float(np.abs(src_aus - aus_vec).sum()) >= self.min_au_distance
             ]
             if not valid:
                 valid = candidates
         else:
             valid = candidates
+
         target_idx, target_img_frame, _ = valid[
             int(torch.randint(len(valid), (1,)).item())
         ]
@@ -365,11 +265,13 @@ class BP4DDataset(VisionDataset):
         return sample
 
     def open_h5(self, cache: dict[str, h5py.File], path: Path) -> h5py.File:
-        """Open an HDF5 file for reading, caching it in memory.
+        """Open an HDF5 file for reading, caching it per worker.
 
         Args:
-            cache: A dictionary mapping file paths to h5py.File objects.
-            path: The path to the HDF5 file.
+            cache:
+              Dict mapping file path strings to open h5py.File handles.
+            path:
+              Path to the HDF5 file.
 
         Returns:
             The opened h5py.File object.
@@ -383,15 +285,19 @@ class BP4DDataset(VisionDataset):
         """Load a raw JPEG from disk as a uint8 RGB TVImage of shape (3, H, W).
 
         Args:
-            subject: Subject ID.
-            task: Task ID.
-            img_frame: Frame number.
+            subject:
+              Subject ID.
+            task:
+              Task ID.
+            img_frame:
+              0-based frame number.
 
         Returns:
             The loaded image as a TVImage.
 
         Raises:
-            FileNotFoundError: If no image is found for the given subject/task/frame.
+            FileNotFoundError:
+              If no image is found for the given subject/task/frame.
         """
         path = resolve_frame_path(
             root=Path(self.root), subject=subject, task=task, img_frame=img_frame

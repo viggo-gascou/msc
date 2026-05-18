@@ -3,24 +3,25 @@
 from collections import defaultdict
 from pathlib import Path
 
-import h5py
 import numpy as np
 import pandas as pd
 
-from ..constants import BP4D_AU_DISTANCES_PATH, BP4D_INDEX_PATH
+from ...constants import BP4D_INDEX_PATH
 
 
 def load_index(path: Path | None = None) -> pd.DataFrame:
     """Load the BP4D coded-frame index.
 
     Args:
-        path: Path to the index parquet. Defaults to BP4D_INDEX_PATH.
+        path:
+          Path to the index parquet. Defaults to BP4D_INDEX_PATH.
 
     Returns:
         DataFrame with columns: subject, task, frame, AU*, AU*_int.
 
     Raises:
-        FileNotFoundError: If the index parquet has not been built yet.
+        FileNotFoundError:
+          If the index parquet has not been built yet.
     """
     p = path or BP4D_INDEX_PATH
     if not p.exists():
@@ -28,51 +29,24 @@ def load_index(path: Path | None = None) -> pd.DataFrame:
     return pd.read_parquet(p)
 
 
-def load_au_distances(subject: str, task: str, path: Path | None = None) -> np.ndarray:
-    """Load the precomputed AU distance matrix for a single sequence.
-
-    Args:
-        subject:
-            Subject ID (e.g. 'F001').
-        task:
-            Task ID (e.g. 'T1').
-        path:
-            Override for the HDF5 path. Defaults to BP4D_AU_DISTANCES_PATH.
-
-    Returns:
-        Float32 array of shape (N, N) — pairwise L1 AU distances between all
-        coded frames in the sequence, in ascending frame order.
-
-    Raises:
-        FileNotFoundError:
-            If the distances file has not been built yet.
-    """
-    p = path or BP4D_AU_DISTANCES_PATH
-    if not p.exists():
-        raise FileNotFoundError(
-            f"AU distances not found: {p} — run precompute_au_distances.py first"
-        )
-    with h5py.File(p, "r") as f:
-        return f[subject][task][:]
-
 
 def resolve_frame_path(
     root: Path, subject: str, task: str, img_frame: int
 ) -> Path | None:
     """Resolve the image path for a single frame, handling mixed padding conventions.
 
-    BP4D images use a mix of 4-digit padding, 3-digit or 2-digit padding, depending
-    on the subject/task.
+    BP4D images use a mix of 4-digit, 3-digit, or 2-digit padding depending on
+    the subject/task.
 
     Args:
         root:
-            Root sequences directory (e.g. ~/projects/semedit/data/BP4D/Sequences).
+          Root sequences directory (e.g. ~/projects/semedit/data/BP4D/Sequences).
         subject:
-            Subject ID (e.g. 'F001').
+          Subject ID (e.g. 'F001').
         task:
-            Task ID (e.g. 'T1').
+          Task ID (e.g. 'T1').
         img_frame:
-            0-based image frame number (AU frame number - 1).
+          0-based image frame number (AU frame number - 1).
 
     Returns:
         Path to the image if found, None otherwise.
@@ -94,12 +68,12 @@ def coded_frame_paths(
 
     Args:
         index:
-            DataFrame as returned by load_index().
+          DataFrame as returned by load_index().
         root:
-            Root sequences directory.
+          Root sequences directory.
 
     Returns:
-        Nested dict mapping task → subject → sorted list of image paths.
+        Nested dict mapping task -> subject -> sorted list of image paths.
     """
     tasks: dict[str, dict[str, list[Path]]] = defaultdict(dict)
     for (subject, task), group in index.groupby(["subject", "task"]):
