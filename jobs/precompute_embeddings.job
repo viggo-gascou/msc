@@ -1,0 +1,28 @@
+#!/bin/bash
+
+#SBATCH --job-name=precompute-emb
+#SBATCH --output=logs/SLURM/precompute_embeddings.%j.out
+#SBATCH --cpus-per-task=4
+#SBATCH --mem-per-cpu=8G
+#SBATCH --gres=gpu:h100:1
+#SBATCH --time=12:00:00
+#SBATCH --partition=scavenge
+#SBATCH --mail-type=BEGIN,END
+
+## SETUP
+
+module load uv/0.7.13-GCCcore-14.2.0
+
+export OMP_NUM_THREADS=4
+
+## RUN
+
+echo "Running on $(hostname) at $(date)"
+
+uv run src/scripts/precompute_embeddings.py \
+    --dataset ffhq \
+    --batch-size 256
+SCRIPT_EXIT_CODE=$?
+
+echo "Done, finished at $(date)"
+exit $SCRIPT_EXIT_CODE
