@@ -1,6 +1,7 @@
 """AU adapter training loop on BP4D/FFHQ."""
 
 import os
+from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
 
@@ -56,7 +57,7 @@ def train(cfg: Args) -> None:
                 "wandb": {
                     "entity": wandb_cfg.entity,
                     "name": wandb_cfg.run_name or None,
-                    "config": OmegaConf.to_container(cfg, resolve=True),
+                    "config": asdict(cfg),
                 }
             },
         )
