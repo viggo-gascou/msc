@@ -23,7 +23,7 @@ while true; do
         [ "$running" -eq 0 ] && break
     fi
 
-    sleep 300
+    sleep 120
 done
 
 # Final sync once all jobs are done
