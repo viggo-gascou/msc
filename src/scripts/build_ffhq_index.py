@@ -9,7 +9,7 @@ from loguru import logger
 from msc.constants import FFHQ_INDEX_PATH, RANDOM_SEED
 
 TARGET_GROUPS = {"20-29", "30-39", "40-49", "50-69", "70-120"}
-DEFAULT_CONFIDENCE = 0.7
+DEFAULT_CONFIDENCE = 0.6
 
 
 def main() -> None:
