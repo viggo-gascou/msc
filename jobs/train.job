@@ -20,6 +20,10 @@ export UV_NO_SYNC=1
 # Enforce offline mode to avoid any network requests from uv
 export UV_OFFLINE=1
 
+# Log wandb offline; sync with wandb-sync.job after
+export WANDB_MODE=offline
+export WANDB_JOB_TYPE=training
+
 # Set this to match "cpus-per-task", supresses ONNX warning on cpu affinity
 export OMP_NUM_THREADS=6
 
