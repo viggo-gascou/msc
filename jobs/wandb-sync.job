@@ -3,8 +3,8 @@
 #SBATCH --job-name=wandb-sync
 #SBATCH --output=logs/SLURM/wandb-sync.%j.out
 #SBATCH --time=1-00:00:00
-#SBATCH --cpus-per-task=1
-#SBATCH --mem-per-cpu=1G
+#SBATCH --cpus-per-task=2
+#SBATCH --mem-per-cpu=4G
 #SBATCH --partition=mlgroup
 
 # Pass job IDs to watch as a colon-separated string, e.g.:
