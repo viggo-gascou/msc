@@ -66,8 +66,10 @@ def get_dataloaders(
         Tuple of (train_loader, val_loader, test_loader).
     """
     train_tf, val_tf = get_transforms(augmentation_proba=augmentation_proba)
-    pin_memory = dataloader_params.num_workers > 0
-    persistent_workers = dataloader_params.num_workers > 0
+    pin_memory = dataloader_params.pin_memory and dataloader_params.num_workers > 0
+    persistent_workers = (
+        dataloader_params.persistent_workers and dataloader_params.num_workers > 0
+    )
 
     if dataset == "ffhq":
         df = load_ffhq_df()

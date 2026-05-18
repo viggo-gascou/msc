@@ -19,10 +19,18 @@ class DataloaderParams:
             Number of samples per batch. Defaults to 32.
         num_workers:
             Number of workers for data loading. Defaults to 2.
+        pin_memory:
+            Pin CPU memory for faster GPU transfers. Automatically disabled
+            when num_workers is 0. Defaults to False.
+        persistent_workers:
+            Keep worker processes alive between epochs. Automatically disabled
+            when num_workers is 0. Defaults to True.
     """
 
     batch_size: int = 32
     num_workers: int = 2
+    pin_memory: bool = False
+    persistent_workers: bool = True
 
 
 @dataclass

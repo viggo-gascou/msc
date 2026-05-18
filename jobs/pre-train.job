@@ -3,7 +3,7 @@
 #SBATCH --job-name=semedit-pretrain
 #SBATCH --output=logs/SLURM/pretrain.%j.out
 #SBATCH --cpus-per-task=6
-#SBATCH --mem-per-cpu=6G
+#SBATCH --mem=64G
 #SBATCH --gres=gpu:a100_40gb:4
 #SBATCH --time=1-00:00:00
 #SBATCH --partition=scavenge
@@ -53,6 +53,7 @@ accelerate launch --multi_gpu \
     --parameters.dataset "ffhq" \
     --parameters.optimizer.lr 1e-4 \
     --parameters.dataloader.batch-size 16 \
+    --parameters.dataloader.num-workers 1 \
     --parameters.gradient-accumulation-steps 5 \
     --parameters.no-early-stopping \
     --parameters.lora.enabled \
