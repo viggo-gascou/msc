@@ -70,7 +70,6 @@ def inference() -> None:
 
     pipeline = load_inference_pipeline(
         cfg.parameters,
-        cfg.ip_adapter,
         args.au_adapter_path,
         device="cuda" if torch.cuda.is_available() else "cpu",
     )
