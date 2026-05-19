@@ -32,7 +32,6 @@ def inference() -> None:
     parser.add_argument("--guidance-scale", type=float, default=5.0)
     parser.add_argument("--strength", type=float, default=0.15)
     parser.add_argument("--au-scale", type=float, default=0.6)
-    parser.add_argument("--id-scale", type=float, default=0.9)
     parser.add_argument(
         "--aus-json",
         type=str,
@@ -58,6 +57,15 @@ def inference() -> None:
         help="Path to AU adapter safetensors checkpoint.",
     )
     args = parser.parse_args()
+
+    if not args.negative_prompt:
+        args.negative_prompt = (
+            "deformed iris, deformed pupils, semi-realistic, cgi, 3d, render, sketch, "
+            "cartoon, drawing, anime, mutated hands and fingers, deformed, distorted, "
+            "disfigured, poorly drawn, bad anatomy, wrong anatomy, extra limb, "
+            "missing limb, floating limbs, disconnected limbs, mutation, mutated, "
+            "ugly, disgusting, amputation"
+        )
 
     try:
         aus = json.loads(args.aus_json)
@@ -106,7 +114,6 @@ def inference() -> None:
         num_inference_steps=args.num_inference_steps,
         strength=args.strength,
         au_scale=args.au_scale,
-        id_scale=args.id_scale,
     )
     generated = output.images[0]
 
@@ -149,7 +156,6 @@ if __name__ == "__main__":
 #   --guidance-scale 6 \
 #   --strength 0.25 \
 #   --au-scale 1.0 \
-#   --id-scale 0.9 \
 #   --prompt "frontal portrait photo, realistic skin, natural lighting" \
 #   --negative-prompt "blurry, noisy, artifacts, distorted face" \
 #   --aus-json '{"AU06":4.0,"AU12":4.0,"AU17":2.5}'
