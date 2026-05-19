@@ -9,7 +9,7 @@ import torch
 from omegaconf import OmegaConf
 from PIL import Image
 
-from msc.constants import BP4D_AU_COLUMN_MAP, BP4D_AU_COLUMNS, BP4D_SEQUENCES_DIR
+from msc.constants import BP4D_SEQUENCES_DIR
 from msc.model_utils import load_inference_pipeline
 
 
@@ -20,8 +20,14 @@ def inference() -> None:
         ValueError: If the subject or task is not valid.
     """
     parser = argparse.ArgumentParser()
-    parser.add_argument("--subject", type=str, default="F001")
-    parser.add_argument("--task", type=str, default="T1")
+    parser.add_argument("--subject", type=str, default=None)
+    parser.add_argument("--task", type=str, default=None)
+    parser.add_argument(
+        "--image",
+        type=str,
+        default=None,
+        help="Path to a source image. Skips BP4D lookup when provided.",
+    )
     parser.add_argument(
         "--prompt",
         type=str,
@@ -74,36 +80,30 @@ def inference() -> None:
     if not isinstance(aus, dict):
         raise ValueError("--aus-json must decode to a JSON object/dict")
 
+    if args.image is None and (args.subject is None or args.task is None):
+        raise ValueError("Provide either --image or both --subject and --task.")
+
     cfg = OmegaConf.load(args.config_path)
+    device = "cuda" if torch.cuda.is_available() else "cpu"
 
     pipeline = load_inference_pipeline(
-        cfg.parameters,
-        args.au_adapter_path,
-        device="cuda" if torch.cuda.is_available() else "cpu",
+        cfg.parameters, args.au_adapter_path, device=device
     )
 
-    df = pd.read_parquet("data/BP4D/Sample/bp4d_index.parquet")
-
-    subject = args.subject
-    task = args.task
-    subset = df[(df["subject"] == subject) & (df["task"] == task)].copy()
-    row = subset.iloc[0]
-
-    source_aus = {
-        au: float(row.get(BP4D_AU_COLUMN_MAP[au], 0.0)) for au in BP4D_AU_COLUMNS
-    }
-    requested_aus = {au: float(aus.get(au, 0.0)) for au in BP4D_AU_COLUMNS}
-
-    au_cols = [BP4D_AU_COLUMN_MAP[au] for au in BP4D_AU_COLUMNS]
-    target_matrix = subset[au_cols].fillna(0.0).to_numpy(dtype=float)
-    requested_vec = [requested_aus[au] for au in BP4D_AU_COLUMNS]
-    diffs = ((target_matrix - requested_vec) ** 2).sum(axis=1)
-    target_row = subset.iloc[int(diffs.argmin())]
-
-    # AU frame numbers are 1-based, image filenames are 0-based.
-    source_image = Image.open(
-        BP4D_SEQUENCES_DIR / subject / task / f"{int(row['frame']) - 1:04d}.jpg"
-    )
+    if args.image is not None:
+        source_image = Image.open(args.image).convert("RGB")
+        label = Path(args.image).stem
+    else:
+        df = pd.read_parquet("data/BP4D/Sample/bp4d_index.parquet")
+        subject = args.subject
+        task = args.task
+        subset = df[(df["subject"] == subject) & (df["task"] == task)].copy()
+        row = subset.iloc[0]
+        # AU frame numbers are 1-based, image filenames are 0-based.
+        source_image = Image.open(
+            BP4D_SEQUENCES_DIR / subject / task / f"{int(row['frame']) - 1:04d}.jpg"
+        )
+        label = subject
 
     output = pipeline(
         prompt=args.prompt,
@@ -120,28 +120,18 @@ def inference() -> None:
     out_dir = Path("output_data/images")
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    single_out = out_dir / f"{args.output_prefix}_{subject}.png"
+    single_out = out_dir / f"{args.output_prefix}_{label}.png"
     generated.save(single_out)
 
     comparison = Image.new("RGB", (source_image.width * 2, source_image.height))
     comparison.paste(source_image.convert("RGB"), (0, 0))
     comparison.paste(generated.convert("RGB"), (source_image.width, 0))
-    comparison_out = out_dir / f"{args.output_prefix}_{subject}_comparison.png"
+    comparison_out = out_dir / f"{args.output_prefix}_{label}_comparison.png"
     comparison.save(comparison_out)
 
-    target_aus = {
-        au: float(target_row.get(BP4D_AU_COLUMN_MAP[au], 0.0)) for au in BP4D_AU_COLUMNS
-    }
     print("Saved:")
     print(f"  generated:  {single_out}")
-    print(f"  comparison: {comparison_out} (input | generated | target)")
-    print("AU scores:")
-    print("  source:")
-    print("   ", source_aus)
-    print("  requested:")
-    print("   ", requested_aus)
-    print("  target (closest in dataset):")
-    print("   ", target_aus)
+    print(f"  comparison: {comparison_out}")
 
 
 if __name__ == "__main__":
