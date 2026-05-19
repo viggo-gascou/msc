@@ -57,7 +57,7 @@ def train(cfg: Args) -> None:
                 "wandb": {
                     "entity": wandb_cfg.entity,
                     "name": wandb_cfg.run_name or None,
-                    "config": asdict(cfg),
+                    "config": asdict(params),
                 }
             },
         )
