@@ -12,10 +12,10 @@ from torchvision.io import ImageReadMode, decode_image
 from torchvision.tv_tensors import Image as TVImage
 
 from ...constants import (
-    BP4D_AU_COLUMNS,
     FFHQ_EMBEDDINGS_PATH,
     FFHQ_IMAGES_DIR,
-    LIBREFACE_AU_COLUMN_MAP,
+    LIBREFACE_AU_COLUMNS,
+    LIBREFACE_AU_SCALE,
 )
 from .utils import load_ffhq_df
 
@@ -115,14 +115,8 @@ class FFHQDataset(Dataset):
         arcface = torch.from_numpy(self.open_h5()[stem][:].copy())
 
         aus = torch.tensor(
-            [
-                float(row[lf_col])
-                if (lf_col := LIBREFACE_AU_COLUMN_MAP[col]) is not None
-                else float("nan")
-                for col in BP4D_AU_COLUMNS
-            ],
-            dtype=torch.float32,
-        )
+            [float(row[col]) for col in LIBREFACE_AU_COLUMNS], dtype=torch.float32
+        ) * torch.tensor(LIBREFACE_AU_SCALE)
 
         sample: FFHQSample = {
             "image": image,

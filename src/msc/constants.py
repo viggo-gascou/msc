@@ -75,37 +75,38 @@ FFHQ_PREPROCESSED_PATH = FFHQ_DATA_DIR / "ffhq_preprocessed.h5"
 
 FFHQ_DATA_DIR.mkdir(exist_ok=True, parents=True)
 
-# Maps each BP4D AU column name to its LibreFace counterpart (None = not in LibreFace).
-# LibreFace R = intensity [0, 1]; D = occurrence detection {0, 1}.
-# 15/23 BP4D AUs overlap; 6 are type-matched (R<->intensity or D<->binary):
-#   AU06, AU12, AU17 (both intensity), AU07, AU23, AU24 (both binary).
-# Mismatches: AU01/02/04/05/09/15/20 are BP4D binary but LibreFace R -> use intensity
-#             AU10/14 are BP4D intensity but LibreFace D → use binary col.
-# DO NOT apply AU_SCALE to FFHQ tensors — LibreFace values are already in [0, 1].
-LIBREFACE_AU_COLUMN_MAP: dict[str, str | None] = {
-    "AU01": "au_1_intensity",  # BP4D binary, LibreFace R
-    "AU02": "au_2_intensity",  # BP4D binary, LibreFace R
-    "AU04": "au_4_intensity",  # BP4D binary, LibreFace R
-    "AU05": "au_5_intensity",  # BP4D binary, LibreFace R
-    "AU06": "au_6_intensity",  # BP4D intensity, LibreFace R (type match)
-    "AU07": "au_7",  # BP4D binary, LibreFace D (type match)
-    "AU09": "au_9_intensity",  # BP4D binary, LibreFace R
-    "AU10": "au_10",  # BP4D intensity, LibreFace D
-    "AU11": None,
-    "AU12": "au_12_intensity",  # BP4D intensity, LibreFace R (type match)
-    "AU13": None,
-    "AU14": "au_14",  # BP4D intensity, LibreFace D
-    "AU15": "au_15_intensity",  # BP4D binary, LibreFace R
-    "AU16": None,
-    "AU17": "au_17_intensity",  # BP4D intensity, LibreFace R (type match)
-    "AU18": None,
-    "AU19": None,
-    "AU20": "au_20_intensity",  # BP4D binary, LibreFace R
-    "AU22": None,
-    "AU23": "au_23",  # BP4D binary, LibreFace D (type match)
-    "AU24": "au_24",  # BP4D binary, LibreFace D (type match)
-    "AU27": None,
-    "AU28": None,
+# Maps AU name to its LibreFace parquet column. R = intensity (0-5); D = binary (0/1).
+LIBREFACE_AU_COLUMN_MAP: dict[str, str] = {
+    "AU01": "au_1_intensity",  # R
+    "AU02": "au_2_intensity",  # R
+    "AU04": "au_4_intensity",  # R
+    "AU05": "au_5_intensity",  # R
+    "AU06": "au_6_intensity",  # R
+    "AU07": "au_7",  # D
+    "AU09": "au_9_intensity",  # R
+    "AU10": "au_10",  # D
+    "AU12": "au_12_intensity",  # R
+    "AU14": "au_14",  # D
+    "AU15": "au_15_intensity",  # R
+    "AU17": "au_17_intensity",  # R
+    "AU20": "au_20_intensity",  # R
+    "AU23": "au_23",  # D
+    "AU24": "au_24",  # D
+    "AU25": "au_25_intensity",  # R
+    "AU26": "au_26_intensity",  # R
+}
+
+# Ordered list of the 17 LibreFace AU columns.
+LIBREFACE_AU_COLUMNS: list[str] = list(LIBREFACE_AU_COLUMN_MAP.values())
+
+# Per-AU scale: intensity AUs (0-5) normalised to [0, 1]; binary AUs left at 1.0.
+LIBREFACE_AU_SCALE: list[float] = [
+    1.0 / 5.0 if col.endswith("_intensity") else 1.0 for col in LIBREFACE_AU_COLUMNS
+]
+
+# Maps AU name (e.g. "AU12") -> index in LIBREFACE_AU_COLUMNS.
+LIBREFACE_AU_NAME_TO_IDX: dict[str, int] = {
+    au_name: idx for idx, au_name in enumerate(LIBREFACE_AU_COLUMN_MAP)
 }
 
 # AU columns coded in BP4D, zero-padded to match FACS convention

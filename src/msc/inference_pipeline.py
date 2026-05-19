@@ -13,8 +13,12 @@ from diffusers.pipelines.stable_diffusion.pipeline_stable_diffusion_img2img impo
 )
 from PIL import Image
 
-from .au_adapter import AU_SCALE, AUEncoder, IdentityAdapter
-from .constants import BP4D_AU_COLUMNS
+from .au_adapter import AUEncoder, IdentityAdapter
+from .constants import (
+    LIBREFACE_AU_COLUMNS,
+    LIBREFACE_AU_NAME_TO_IDX,
+    LIBREFACE_AU_SCALE,
+)
 from .face_embeddings.arcface import ArcFaceEmbedding
 from .torch_utils import tensor_to_bgr
 
@@ -89,9 +93,14 @@ class AUAdapterPipeline(StableDiffusionImg2ImgPipeline):
         """
         dtype = next(self.au_encoder.parameters()).dtype
         if isinstance(aus, dict):
-            values = [aus.get(col, 0.0) for col in BP4D_AU_COLUMNS]
-            aus = torch.tensor(values, dtype=torch.float32).unsqueeze(0)
-            aus = aus * torch.tensor(AU_SCALE, dtype=torch.float32)
+            values = [0.0] * len(LIBREFACE_AU_COLUMNS)
+            for au_name, val in aus.items():
+                if (idx := LIBREFACE_AU_NAME_TO_IDX.get(au_name)) is not None:
+                    values[idx] = val
+            aus = (
+                torch.tensor(values, dtype=torch.float32)
+                * torch.tensor(LIBREFACE_AU_SCALE, dtype=torch.float32)
+            ).unsqueeze(0)
         aus = aus.to(device=arcface_embeds.device, dtype=dtype)
         arcface_embeds = arcface_embeds.to(dtype=dtype)
         au_tokens = self.au_encoder.encode(aus)
