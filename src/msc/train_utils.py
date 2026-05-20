@@ -84,8 +84,9 @@ def forward_batch(
         original_samples=src_latents, noise=noise, timesteps=timesteps
     )
 
+    prompts = batch.get("target_caption") or [""] * src_latents.shape[0]
     ids = tokenizer(
-        [""] * src_latents.shape[0],
+        list(prompts),
         padding="max_length",
         max_length=tokenizer.model_max_length,
         truncation=True,
