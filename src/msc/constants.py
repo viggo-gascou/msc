@@ -9,11 +9,13 @@ DATA_DIR = PROJECT_ROOT / "data"
 CONFIG_DIR = PROJECT_ROOT / "config"
 LOG_DIR = PROJECT_ROOT / "logs"
 MODEL_DIR = PROJECT_ROOT / "models"
+FIGURES_DIR = PROJECT_ROOT / "figures"
 
 CACHE_DIR.mkdir(exist_ok=True, parents=True)
 DATA_DIR.mkdir(exist_ok=True, parents=True)
 LOG_DIR.mkdir(exist_ok=True, parents=True)
 MODEL_DIR.mkdir(exist_ok=True, parents=True)
+FIGURES_DIR.mkdir(exist_ok=True, parents=True)
 
 # BP4D data constants
 # Raw sequences and AU coding live in the shared group folder on HPC;
@@ -36,6 +38,7 @@ BP4D_DATA_DIR = (
 BP4D_INDEX_PATH = BP4D_DATA_DIR / "bp4d_index.parquet"
 BP4D_AU_DISTANCES_PATH = BP4D_DATA_DIR / "au_distances.h5"
 BP4D_VAE_LATENTS_PATH = DATA_DIR / "BP4D" / "vae_latents.h5"
+BP4D_CAPTIONS_PATH = DATA_DIR / "BP4D" / "bp4d_captions.parquet"
 
 # On HPC use the proper split indices; locally fall back to the single sample index.
 BP4D_TRAIN_INDEX_PATH = (
@@ -69,6 +72,7 @@ FFHQ_IMAGES_DIR = (
     else FFHQ_DATA_DIR / "images1024x1024"
 )
 FFHQ_INDEX_PATH = FFHQ_DATA_DIR / "ffhq_index.parquet"
+FFHQ_CAPTIONS_PATH = FFHQ_DATA_DIR / "ffhq_captions.parquet"
 LIBREFACE_FFHQ_PATH = FFHQ_DATA_DIR / "ffhq_libreface.parquet"
 FFHQ_EMBEDDINGS_PATH = FFHQ_DATA_DIR / "ffhq_embeddings.h5"
 FFHQ_PREPROCESSED_PATH = FFHQ_DATA_DIR / "ffhq_preprocessed.h5"

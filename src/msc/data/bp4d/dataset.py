@@ -7,6 +7,7 @@ from pathlib import Path
 
 import h5py
 import numpy as np
+import pandas as pd
 import torch
 from torchvision.datasets import VisionDataset
 from torchvision.io import ImageReadMode, decode_image
@@ -16,6 +17,7 @@ from ...au_adapter import AU_SCALE
 from ...constants import (
     BP4D_AU_COLUMN_MAP,
     BP4D_AU_COLUMNS,
+    BP4D_CAPTIONS_PATH,
     BP4D_EMBEDDINGS_DIR,
     BP4D_PREPROCESSED_DIR,
     BP4D_SEQUENCES_DIR,
@@ -34,9 +36,11 @@ class BP4DSample(t.TypedDict):
     arcface: torch.Tensor
     adaface: torch.Tensor
     aus: torch.Tensor
+    caption: str
 
     target_image: TVImage
     target_aus: torch.Tensor
+    target_caption: str
 
     face: t.NotRequired[torch.Tensor | None]
 
@@ -83,6 +87,7 @@ class BP4DDataset(VisionDataset):
         preprocessed_dir: Path = BP4D_PREPROCESSED_DIR,
         embeddings_dir: Path = BP4D_EMBEDDINGS_DIR,
         index_path: Path | None = None,
+        captions_path: Path | None = None,
     ) -> None:
         """BP4D frame-level dataset.
 
@@ -105,6 +110,9 @@ class BP4DDataset(VisionDataset):
                 Path to the embeddings HDF5 directory.
             index_path:
                 Override for the index parquet path. Defaults to BP4D_INDEX_PATH.
+            captions_path (optional):
+                Path to the captions parquet. Defaults to BP4D_CAPTIONS_PATH.
+                If the file does not exist, captions will be empty strings.
         """
         super().__init__(
             root=sequences_dir, transform=transform, target_transform=target_transform
@@ -147,6 +155,13 @@ class BP4DDataset(VisionDataset):
             self.subject_index[subject].extend(entries)
 
         self.min_au_distance: float = 0.0
+
+        cap_path = captions_path or BP4D_CAPTIONS_PATH
+        self.caption_map: dict[tuple[str, str], str] = {}
+        if cap_path.exists():
+            caps = pd.read_parquet(cap_path, columns=["subject", "task", "caption"])
+            for row in caps.itertuples(index=False):
+                self.caption_map[(str(row.subject), str(row.task))] = str(row.caption)
 
         self.preprocessed: dict[str, h5py.File] = {}
         self.embeddings: dict[str, h5py.File] = {}
@@ -249,6 +264,9 @@ class BP4DDataset(VisionDataset):
             torch.from_numpy(pre_f[subject]["faces"][pos]) if self.load_face else None
         )
 
+        caption = self.caption_map.get((subject, task), "")
+        target_caption = self.caption_map.get((subject, target_task), "")
+
         sample: BP4DSample = {
             "subject": subject,
             "task": task,
@@ -257,8 +275,10 @@ class BP4DDataset(VisionDataset):
             "arcface": arcface,
             "adaface": adaface,
             "aus": aus,
+            "caption": caption,
             "target_image": target_image,
             "target_aus": target_aus,
+            "target_caption": target_caption,
         }
         if face is not None:
             sample["face"] = face

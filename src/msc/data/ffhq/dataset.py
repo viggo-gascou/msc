@@ -12,6 +12,7 @@ from torchvision.io import ImageReadMode, decode_image
 from torchvision.tv_tensors import Image as TVImage
 
 from ...constants import (
+    FFHQ_CAPTIONS_PATH,
     FFHQ_EMBEDDINGS_PATH,
     FFHQ_IMAGES_DIR,
     LIBREFACE_AU_COLUMNS,
@@ -26,6 +27,7 @@ class FFHQSample(t.TypedDict):
     image: TVImage
     arcface: torch.Tensor
     aus: torch.Tensor
+    caption: str
     target_image: TVImage
     target_aus: torch.Tensor
 
@@ -54,6 +56,7 @@ class FFHQDataset(Dataset):
         split: t.Literal["train", "val", "test"],
         transform: c.Callable | None = None,
         df: pd.DataFrame | None = None,
+        captions_path: Path | None = None,
     ) -> None:
         """Initialise the FFHQ dataset for a given split.
 
@@ -65,12 +68,23 @@ class FFHQDataset(Dataset):
             df (optional):
               Pre-loaded index DataFrame from load_ffhq_df(). Pass a shared
               instance across splits to avoid redundant disk reads. Defaults to None.
+            captions_path (optional):
+              Path to the captions parquet. Defaults to FFHQ_CAPTIONS_PATH.
+              If the file does not exist, captions will be empty strings.
         """
         super().__init__()
         self.transform = transform
         full_df = df if df is not None else load_ffhq_df()
         self.df = full_df[full_df["split"] == split].reset_index(drop=True)
         self.h5: h5py.File | None = None
+
+        cap_path = captions_path or FFHQ_CAPTIONS_PATH
+        if cap_path.exists():
+            caps = pd.read_parquet(cap_path, columns=["image_number", "caption"])
+            self.df = self.df.merge(caps, on="image_number", how="left")
+            self.df["caption"] = self.df["caption"].fillna("")
+        else:
+            self.df["caption"] = ""
 
     def open_h5(self) -> h5py.File:
         """Open the ArcFace embeddings HDF5 file, caching the handle per worker.
@@ -118,10 +132,13 @@ class FFHQDataset(Dataset):
             [float(row[col]) for col in LIBREFACE_AU_COLUMNS], dtype=torch.float32
         ) * torch.tensor(LIBREFACE_AU_SCALE)
 
+        caption: str = str(row["caption"])
+
         sample: FFHQSample = {
             "image": image,
             "arcface": arcface,
             "aus": aus,
+            "caption": caption,
             "target_image": image,
             "target_aus": aus,
         }
