@@ -4,9 +4,9 @@
 #SBATCH --output=logs/SLURM/pretrain.%j.out
 #SBATCH --cpus-per-task=6
 #SBATCH --mem=64G
-#SBATCH --gres=gpu:a100_40gb:4
+#SBATCH --gres=gpu:a30:4
 #SBATCH --time=1-00:00:00
-#SBATCH --partition=scavenge
+#SBATCH --partition=acltr
 #SBATCH --mail-type=BEGIN,END
 
 ## SETUP
@@ -52,9 +52,9 @@ accelerate launch --multi_gpu \
     --parameters.unet-model "SG161222/Realistic_Vision_V4.0_noVAE" \
     --parameters.dataset "ffhq" \
     --parameters.optimizer.lr 1e-4 \
-    --parameters.dataloader.batch-size 16 \
-    --parameters.dataloader.num-workers 1 \
-    --parameters.gradient-accumulation-steps 5 \
+    --parameters.dataloader.batch-size 12 \
+    --parameters.dataloader.num-workers 2 \
+    --parameters.gradient-accumulation-steps 7 \
     --parameters.no-early-stopping \
     --parameters.lora.enabled \
     --parameters.lora.rank 16
