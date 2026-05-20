@@ -1,14 +1,4 @@
-# /// script
-# requires-python = ">=3.12"
-# dependencies = [
-#   "transformers",
-#   "torch",
-#   "Pillow",
-#   "pandas",
-#   "pyarrow",
-#   "tqdm",
-# ]
-# ///
+
 """Generate BLIP-2 captions for FFHQ images, writing image_id + caption to parquet."""
 
 import argparse
