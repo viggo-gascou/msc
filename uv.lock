@@ -1293,7 +1293,8 @@ dependencies = [
     { name = "numpy" },
     { name = "omegaconf" },
     { name = "onnxruntime", marker = "sys_platform == 'darwin'" },
-    { name = "onnxruntime-gpu", marker = "sys_platform == 'linux'" },
+    { name = "onnxruntime-gpu", version = "1.24.4", source = { registry = "https://pypi.org/simple" }, marker = "platform_machine != 'aarch64' and sys_platform == 'linux'" },
+    { name = "onnxruntime-gpu", version = "1.26.0", source = { registry = "https://aiinfra.pkgs.visualstudio.com/PublicPackages/_packaging/onnxruntime-cuda-13/pypi/simple/" }, marker = "platform_machine == 'aarch64' and sys_platform == 'linux'" },
     { name = "pandas" },
     { name = "peft" },
     { name = "pyarrow" },
@@ -1333,7 +1334,8 @@ requires-dist = [
     { name = "numpy", specifier = ">=2.4.2" },
     { name = "omegaconf", specifier = ">=2.3.0" },
     { name = "onnxruntime", marker = "sys_platform == 'darwin'", specifier = ">=1.24.3" },
-    { name = "onnxruntime-gpu", marker = "sys_platform == 'linux'", specifier = ">=1.24.3" },
+    { name = "onnxruntime-gpu", marker = "platform_machine != 'aarch64' and sys_platform == 'linux'", specifier = ">=1.24.3" },
+    { name = "onnxruntime-gpu", marker = "platform_machine == 'aarch64' and sys_platform == 'linux'", specifier = ">=1.24.3", index = "https://aiinfra.pkgs.visualstudio.com/PublicPackages/_packaging/onnxruntime-cuda-13/pypi/simple/" },
     { name = "pandas", specifier = ">=3.0.2" },
     { name = "peft", specifier = ">=0.18.1" },
     { name = "pyarrow", specifier = ">=23.0.1" },
@@ -1831,15 +1833,37 @@ wheels = [
 name = "onnxruntime-gpu"
 version = "1.24.4"
 source = { registry = "https://pypi.org/simple" }
+resolution-markers = [
+    "platform_machine == 'x86_64' and sys_platform == 'linux'",
+    "(platform_machine != 'aarch64' and platform_machine != 's390x' and platform_machine != 'x86_64' and sys_platform == 'linux') or (platform_machine != 's390x' and sys_platform == 'win32')",
+    "(platform_machine == 's390x' and sys_platform == 'linux') or (platform_machine == 's390x' and sys_platform == 'win32')",
+]
 dependencies = [
-    { name = "flatbuffers", marker = "sys_platform == 'linux' or sys_platform == 'win32'" },
-    { name = "numpy", marker = "sys_platform == 'linux' or sys_platform == 'win32'" },
-    { name = "packaging", marker = "sys_platform == 'linux' or sys_platform == 'win32'" },
-    { name = "protobuf", marker = "sys_platform == 'linux' or sys_platform == 'win32'" },
-    { name = "sympy", marker = "sys_platform == 'linux' or sys_platform == 'win32'" },
+    { name = "flatbuffers", marker = "(platform_machine != 'aarch64' and sys_platform == 'linux') or sys_platform == 'win32'" },
+    { name = "numpy", marker = "(platform_machine != 'aarch64' and sys_platform == 'linux') or sys_platform == 'win32'" },
+    { name = "packaging", marker = "(platform_machine != 'aarch64' and sys_platform == 'linux') or sys_platform == 'win32'" },
+    { name = "protobuf", marker = "(platform_machine != 'aarch64' and sys_platform == 'linux') or sys_platform == 'win32'" },
+    { name = "sympy", marker = "(platform_machine != 'aarch64' and sys_platform == 'linux') or sys_platform == 'win32'" },
 ]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/d0/2c/5b3fd4748cf7ed291eae541a37e426efc20ea04cb6e6a05768304ab0aa41/onnxruntime_gpu-1.24.4-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:eb0e38f0c1ef3b76ae0081c8e51eed20dd8925aa916f0fc6f9b8b17d05610e99", size = 252765531, upload-time = "2026-03-17T22:03:57.528Z" },
+]
+
+[[package]]
+name = "onnxruntime-gpu"
+version = "1.26.0"
+source = { registry = "https://aiinfra.pkgs.visualstudio.com/PublicPackages/_packaging/onnxruntime-cuda-13/pypi/simple/" }
+resolution-markers = [
+    "platform_machine == 'aarch64' and sys_platform == 'linux'",
+]
+dependencies = [
+    { name = "flatbuffers", marker = "platform_machine == 'aarch64' and sys_platform == 'linux'" },
+    { name = "numpy", marker = "platform_machine == 'aarch64' and sys_platform == 'linux'" },
+    { name = "packaging", marker = "platform_machine == 'aarch64' and sys_platform == 'linux'" },
+    { name = "protobuf", marker = "platform_machine == 'aarch64' and sys_platform == 'linux'" },
+]
+wheels = [
+    { url = "https://aiinfra.pkgs.visualstudio.com/2692857e-05ef-43b4-ba9c-ccf1c22c437c/_packaging/62a612ee-4dee-42bc-8205-15b672eb4e4b/pypi/download/onnxruntime-gpu/1.26/onnxruntime_gpu-1.26.0-cp312-cp312-manylinux_2_34_aarch64.whl", hash = "sha256:6b27c8bf572e776257a5770bb93279cdeee384099cea7723c276d7a49e3971a5" },
 ]
 
 [[package]]
