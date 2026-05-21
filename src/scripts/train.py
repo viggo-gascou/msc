@@ -14,7 +14,7 @@ from omegaconf import OmegaConf
 from tqdm import tqdm
 from transformers import CLIPTokenizer
 
-from msc.au_adapter import AUEncoder, IdentityAdapter, save_au_adapter
+from msc.au_adapter import AUEncoder, IdentityAdapter, load_au_adapter, save_au_adapter
 from msc.cli import cli
 from msc.config import Args
 from msc.constants import RANDOM_SEED
@@ -118,6 +118,14 @@ def train(cfg: Args) -> None:
             logger.info(
                 f"Resumed from {params.resume_from}: epoch {start_epoch}, "
                 f"best val loss {best_val_loss:.4f}"
+            )
+    elif params.adapter_weights is not None:
+        au_encoder, identity_adapter, au_procs = load_au_adapter(
+            params.adapter_weights, unet
+        )
+        if accelerator.is_main_process:
+            logger.info(
+                f"Loaded pre-trained adapter weights from {params.adapter_weights}"
             )
 
     unet, au_encoder, identity_adapter, optimizer, train_loader = accelerator.prepare(

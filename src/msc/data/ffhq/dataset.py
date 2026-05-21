@@ -27,9 +27,9 @@ class FFHQSample(t.TypedDict):
     image: TVImage
     arcface: torch.Tensor
     aus: torch.Tensor
-    caption: str
     target_image: TVImage
     target_aus: torch.Tensor
+    target_caption: str
 
 
 class FFHQDataset(Dataset):
@@ -138,8 +138,8 @@ class FFHQDataset(Dataset):
             "image": image,
             "arcface": arcface,
             "aus": aus,
-            "caption": caption,
             "target_image": image,
             "target_aus": aus,
+            "target_caption": caption,
         }
         return sample

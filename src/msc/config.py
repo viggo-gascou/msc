@@ -141,6 +141,10 @@ class Params:
             Path to a checkpoint .pt file to resume training from. When set,
             training resumes from that checkpoint's epoch and optimizer state.
             Defaults to None (start from scratch).
+        adapter_weights:
+            Path to a safetensors file produced by save_au_adapter (e.g.
+            best_au_adapter.safetensors from a pre-training run). Loads adapter
+            weights only. Defaults to None.
         dataset:
             Which dataset to use. 'bp4d' uses BP4DDataset; 'ffhq' uses FFHQDataset
             and forces reconstruction mode. Defaults to 'bp4d'.
@@ -171,6 +175,7 @@ class Params:
     min_au_distance: float = 1.0
     reconstruction: bool = False
     resume_from: str | None = None
+    adapter_weights: str | None = None
     dataset: str = "bp4d"
     au_num_tokens: int = 16
 
