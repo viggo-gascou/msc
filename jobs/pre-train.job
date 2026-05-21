@@ -4,9 +4,9 @@
 #SBATCH --output=logs/SLURM/pretrain.%j.out
 #SBATCH --cpus-per-task=6
 #SBATCH --mem=64G
-#SBATCH --gres=gpu:h100:1
-#SBATCH --time=1-00:00:00
-#SBATCH --partition=scavenge
+#SBATCH --gres=gpu:a30:4
+#SBATCH --time=3-00:00:00
+#SBATCH --partition=acltr
 #SBATCH --mail-type=BEGIN,END
 
 ## SETUP
@@ -21,7 +21,7 @@ export UV_NO_SYNC=1
 export UV_OFFLINE=1
 
 # Log wandb offline; sync with wandb-sync.job after
-export WANDB_MODE=offline
+#export WANDB_MODE=offline
 export WANDB_JOB_TYPE=pre-training
 
 # Set this to match "cpus-per-task", supresses ONNX warning on cpu affinity
@@ -43,8 +43,8 @@ source .venv/bin/activate
 
 echo "Setup complete, running script at $(date)"
 # run the script
-accelerate launch \
-    --num_processes 1 \
+accelerate launch --multi_gpu \
+    --num_processes 4 \
     --num_machines 1 \
     --mixed_precision bf16 \
     --dynamo_backend no \
@@ -52,8 +52,8 @@ accelerate launch \
     --parameters.unet-model "SG161222/Realistic_Vision_V4.0_noVAE" \
     --parameters.dataset "ffhq" \
     --parameters.optimizer.lr 1e-4 \
-    --parameters.dataloader.batch-size 48 \
-    --parameters.dataloader.num-workers 4 \
+    --parameters.dataloader.batch-size 12 \
+    --parameters.dataloader.num-workers 2 \
     --parameters.gradient-accumulation-steps 7 \
     --parameters.no-early-stopping \
     --parameters.lora.enabled \
