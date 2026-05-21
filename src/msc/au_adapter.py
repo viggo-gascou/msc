@@ -42,7 +42,7 @@ class AUEncoder(nn.Module):
         self,
         num_aus: int = NUM_AUS,
         hidden: int = 64,
-        dim: int = 768,
+        dim: int = 1024,
         num_tokens: int = 16,
     ) -> None:
         """Initialise AUEncoder.
@@ -119,7 +119,7 @@ class IdentityAdapter(nn.Module):
     are learned.
     """
 
-    def __init__(self, dim: int = 768, faceid_dim: int = 512) -> None:
+    def __init__(self, dim: int = 1024, faceid_dim: int = 512) -> None:
         """Initialise IdentityAdapter.
 
         Args:
@@ -205,7 +205,7 @@ class AUAttnProcessor(nn.Module):
         }`
     """
 
-    def __init__(self, hidden_size: int, cross_attention_dim: int = 768) -> None:
+    def __init__(self, hidden_size: int, cross_attention_dim: int = 1024) -> None:
         """Initialise AUAttnProcessor.
 
         Args:
@@ -412,8 +412,6 @@ def save_au_adapter(
 ) -> None:
     """Serialise all trainable AU adapter weights to a safetensors file.
 
-    IP-Adapter weights (`to_k_ip`, `to_v_ip`) are excluded — they are
-    pretrained and loaded separately via `load_ip_adapter_weights`.
     LoRA weights are included if present on the UNet.
 
     Args:

@@ -92,7 +92,7 @@ class Params:
             LoRA fine-tuning configuration for the UNet.
         unet_model:
             The UNet model id to use.
-            Defaults to 'stable-diffusion-v1-5/stable-diffusion-v1-5'.
+            Defaults to 'Manojb/stable-diffusion-2-1-base'.
         vae_model:
             Optional VAE model id to override the one bundled with the pipeline.
         epochs:
@@ -157,7 +157,7 @@ class Params:
     optimizer: OptimizerParams
     dataloader: DataloaderParams
     lora: LoraParams
-    unet_model: str = "stable-diffusion-v1-5/stable-diffusion-v1-5"
+    unet_model: str = "Manojb/stable-diffusion-2-1-base"
     vae_model: str | None = None
     epochs: int = 50
     patience: int = 5

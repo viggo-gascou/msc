@@ -44,6 +44,10 @@ def forward_batch(
     Returns:
         Scalar x0 loss between the predicted clean image (recovered from noisy
         source) and the target latents, optionally weighted by Min-SNR.
+
+    Raises:
+        ValueError:
+          If the scheduler has an unsupported prediction type.
     """
     vae_dtype = next(vae.parameters()).dtype
     src_pixels = batch["image"].to(device=device, dtype=vae_dtype)
@@ -94,14 +98,14 @@ def forward_batch(
     ).input_ids.to(device)
     cond = text_encoder(ids).last_hidden_state
 
-    pred_eps = unet(  # type: ignore[not-callable]
+    model_output = unet(  # type: ignore[not-callable]
         sample=noisy_src,
         timestep=timesteps,
         encoder_hidden_states=cond,
         cross_attention_kwargs={"au_embedding": au_tokens, "au_scale": 1.0},
     ).sample
 
-    # Recover the implied clean image from the noisy source and predicted noise.
+    # Recover the implied clean image from the noisy source and model output.
     # Comparing against target latents directly supervises expression transfer —
     # the model must steer denoising from source toward the target expression.
     if params.snr_gamma < 0:
@@ -124,10 +128,16 @@ def forward_batch(
 
     alpha_t = (
         scheduler.alphas_cumprod.to(timesteps.device)[timesteps]
-        .to(pred_eps)
+        .to(model_output)
         .view(-1, 1, 1, 1)
     )
-    pred_x0 = (noisy_src - (1 - alpha_t).sqrt() * pred_eps) / alpha_t.sqrt()
+    if scheduler.config.prediction_type == "epsilon":
+        pred_x0 = (noisy_src - (1 - alpha_t).sqrt() * model_output) / alpha_t.sqrt()
+    elif scheduler.config.prediction_type == "v_prediction":
+        pred_x0 = alpha_t.sqrt() * noisy_src - (1 - alpha_t).sqrt() * model_output
+    else:
+        raise ValueError(f"Unknown prediction_type: {scheduler.config.prediction_type}")
+
     if params.reconstruction:
         target_latents = src_latents
     else:
