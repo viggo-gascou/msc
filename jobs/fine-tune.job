@@ -44,13 +44,12 @@ accelerate launch --multi_gpu \
     --mixed_precision bf16 \
     --dynamo_backend no \
     src/scripts/train.py \
-    --parameters.unet-model "SG161222/Realistic_Vision_V4.0_noVAE" \
     --parameters.dataset bp4d \
     --parameters.adapter-weights "${PRETRAIN_CKPT}/best_au_adapter.safetensors" \
     --parameters.optimizer.lr 1e-5 \
-    --parameters.dataloader.batch-size 12 \
+    --parameters.dataloader.batch-size 10 \
     --parameters.dataloader.num-workers 2 \
-    --parameters.gradient-accumulation-steps 7 \
+    --parameters.gradient-accumulation-steps 8 \
     --parameters.lora.enabled \
     --parameters.lora.rank 16
 SCRIPT_EXIT=$?

@@ -49,12 +49,11 @@ accelerate launch --multi_gpu \
     --mixed_precision bf16 \
     --dynamo_backend no \
     src/scripts/train.py \
-    --parameters.unet-model "SG161222/Realistic_Vision_V4.0_noVAE" \
     --parameters.dataset "ffhq" \
     --parameters.optimizer.lr 1e-4 \
-    --parameters.dataloader.batch-size 12 \
+    --parameters.dataloader.batch-size 10 \
     --parameters.dataloader.num-workers 2 \
-    --parameters.gradient-accumulation-steps 7 \
+    --parameters.gradient-accumulation-steps 8 \
     --parameters.no-early-stopping \
     --parameters.lora.enabled \
     --parameters.lora.rank 16
