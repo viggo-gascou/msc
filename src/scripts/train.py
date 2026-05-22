@@ -82,8 +82,17 @@ def train(cfg: Args) -> None:
     for model in [vae, text_encoder]:
         model.to(device, dtype=weight_dtype)
 
-    au_encoder = AUEncoder(num_tokens=params.au_num_tokens)
-    identity_adapter = IdentityAdapter()
+    if params.adapter_weights is not None:
+        au_encoder, identity_adapter, au_procs = load_au_adapter(
+            params.adapter_weights, unet
+        )
+        if accelerator.is_main_process:
+            logger.info(
+                f"Loaded pre-trained adapter weights from {params.adapter_weights}"
+            )
+    else:
+        au_encoder = AUEncoder(num_tokens=params.au_num_tokens)
+        identity_adapter = IdentityAdapter()
 
     optimizer = torch.optim.AdamW(
         params=(
@@ -123,14 +132,6 @@ def train(cfg: Args) -> None:
             logger.info(
                 f"Resumed from {params.resume_from}: epoch {start_epoch}, "
                 f"best val loss {best_val_loss:.4f}"
-            )
-    elif params.adapter_weights is not None:
-        au_encoder, identity_adapter, au_procs = load_au_adapter(
-            params.adapter_weights, unet
-        )
-        if accelerator.is_main_process:
-            logger.info(
-                f"Loaded pre-trained adapter weights from {params.adapter_weights}"
             )
 
     unet, au_encoder, identity_adapter, optimizer, train_loader = accelerator.prepare(
