@@ -160,7 +160,12 @@ class BP4DDataset(VisionDataset):
         self.caption_map: dict[tuple[str, str], str] = {}
         if cap_path.exists():
             caps = pd.read_parquet(cap_path, columns=["subject", "task", "caption"])
-            for row in caps.itertuples(index=False):
+            mode_caps = (
+                caps.groupby(["subject", "task"])["caption"]
+                .agg(lambda x: x.mode().iloc[0])
+                .reset_index()
+            )
+            for row in mode_caps.itertuples(index=False):
                 self.caption_map[(str(row.subject), str(row.task))] = str(row.caption)
 
         self.preprocessed: dict[str, h5py.File] = {}

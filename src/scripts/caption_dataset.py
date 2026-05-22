@@ -24,13 +24,15 @@ BP4D_CAPTIONS_PATH = BP4D_DATA_DIR / "bp4d_captions.parquet"
 FFHQ_CAPTIONS_PATH = FFHQ_DATA_DIR / "ffhq_captions.parquet"
 
 
-class _DatasetConfig(t.TypedDict):
+class DatasetConfig(t.TypedDict):
+    """DatasetConfig."""
+
     index_path: Path
     output_path: Path
     id_columns: list[str]
 
 
-_DATASETS: dict[str, _DatasetConfig] = {
+DATASETS: dict[str, DatasetConfig] = {
     "bp4d": {
         "index_path": BP4D_INDEX_PATH,
         "output_path": BP4D_CAPTIONS_PATH,
@@ -75,7 +77,7 @@ def caption_dataset(
           Path to write the output captions parquet.
     """
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    id_cols = _DATASETS[dataset]["id_columns"]
+    id_cols = DATASETS[dataset]["id_columns"]
 
     df = pd.read_parquet(index_path)[id_cols].drop_duplicates()
     logger.info(f"Loaded {len(df)} frames from {index_path}")
@@ -193,7 +195,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description="Generate BLIP-2 captions for BP4D or FFHQ frames."
     )
-    parser.add_argument("--dataset", type=str, choices=list(_DATASETS), default="bp4d")
+    parser.add_argument("--dataset", type=str, choices=list(DATASETS), default="bp4d")
     parser.add_argument("--batch-size", type=int, default=32)
     parser.add_argument("--max-new-tokens", type=int, default=50)
     parser.add_argument("--model", type=str, default="Salesforce/blip2-opt-2.7b")
@@ -207,7 +209,7 @@ def main() -> None:
     parser.add_argument("--output-path", type=Path, default=None)
     args = parser.parse_args()
 
-    cfg = _DATASETS[args.dataset]
+    cfg = DATASETS[args.dataset]
     caption_dataset(
         dataset=args.dataset,
         batch_size=args.batch_size,
