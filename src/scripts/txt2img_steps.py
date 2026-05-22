@@ -17,7 +17,7 @@ import torch
 from diffusers import DDIMScheduler, StableDiffusionPipeline
 from PIL import Image
 
-SNAPSHOT_EVERY = 10
+SNAPSHOT_EVERY = 50
 
 
 def decode_latents(pipe, latents):
