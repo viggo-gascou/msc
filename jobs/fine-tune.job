@@ -47,9 +47,9 @@ accelerate launch --multi_gpu \
     --parameters.dataset bp4d \
     --parameters.adapter-weights "${PRETRAIN_CKPT}/best_au_adapter.safetensors" \
     --parameters.optimizer.lr 1e-5 \
-    --parameters.dataloader.batch-size 8 \
+    --parameters.dataloader.batch-size 10 \
     --parameters.dataloader.num-workers 2 \
-    --parameters.gradient-accumulation-steps 10 \
+    --parameters.gradient-accumulation-steps 8 \
     --parameters.gradient-checkpointing \
     --parameters.lora.enabled \
     --parameters.lora.rank 16
