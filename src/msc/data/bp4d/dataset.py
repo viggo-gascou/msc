@@ -9,20 +9,20 @@ import h5py
 import numpy as np
 import pandas as pd
 import torch
+from loguru import logger
 from torchvision.datasets import VisionDataset
 from torchvision.io import ImageReadMode, decode_image
 from torchvision.tv_tensors import Image as TVImage
 
-from ...au_adapter import AU_SCALE
 from ...constants import (
-    BP4D_AU_COLUMN_MAP,
-    BP4D_AU_COLUMNS,
     BP4D_CAPTIONS_PATH,
     BP4D_EMBEDDINGS_DIR,
     BP4D_PREPROCESSED_DIR,
     BP4D_SEQUENCES_DIR,
+    LIBREFACE_AU_COLUMNS,
+    LIBREFACE_AU_SCALE,
 )
-from .utils import load_index, resolve_frame_path
+from .utils import load_index, load_libreface_aus, resolve_frame_path
 
 
 class BP4DSample(t.TypedDict):
@@ -129,19 +129,34 @@ class BP4DDataset(VisionDataset):
             index = index[index["subject"].isin(subjects)]
 
         self.index = index.reset_index(drop=True)
+        self._lf_aus: dict[str, dict[tuple[str, int], np.ndarray]] = (
+            load_libreface_aus()
+        )
+        valid = {
+            (task, subj, frame)
+            for task, task_dict in self._lf_aus.items()
+            for subj, frame in task_dict
+        }
+        before = len(self.index)
+        self.index = self.index[
+            self.index.apply(
+                lambda r: (str(r["task"]), str(r["subject"]), int(r["frame"])) in valid,
+                axis=1,
+            )
+        ].reset_index(drop=True)
+        dropped = before - len(self.index)
+        if dropped:
+            logger.warning(
+                f"BP4DDataset: dropped {dropped}/{before} frames"
+                " with no LibreFace detection"
+            )
 
         self.seq_index: defaultdict[
             tuple[str, str], list[tuple[int, int, np.ndarray]]
         ] = defaultdict(list)
         for i, row in enumerate(self.index.itertuples(index=False)):
             au_vec = np.nan_to_num(
-                np.array(
-                    [
-                        float(getattr(row, BP4D_AU_COLUMN_MAP[col], float("nan")))
-                        for col in BP4D_AU_COLUMNS
-                    ],
-                    dtype=np.float32,
-                ),
+                self._lookup_aus(str(row.task), str(row.subject), int(row.frame)),
                 nan=0.0,
             )
             self.seq_index[(str(row.subject), str(row.task))].append(
@@ -181,6 +196,14 @@ class BP4DDataset(VisionDataset):
         """
         self.min_au_distance = distance
 
+    def _lookup_aus(self, task: str, subject: str, frame: int) -> np.ndarray:
+        task_dict = self._lf_aus.get(task)
+        if task_dict is not None:
+            aus = task_dict.get((subject, frame))
+            if aus is not None:
+                return aus
+        return np.full(len(LIBREFACE_AU_COLUMNS), float("nan"), dtype=np.float32)
+
     def __len__(self) -> int:
         """Return the number of samples in the dataset."""
         return len(self.index)
@@ -214,10 +237,9 @@ class BP4DDataset(VisionDataset):
         arcface = torch.from_numpy(emb_f[subject]["arcface"][pos])
         adaface = torch.from_numpy(emb_f[subject]["adaface"][pos])
 
-        aus = torch.tensor(
-            [row.get(BP4D_AU_COLUMN_MAP[col], float("nan")) for col in BP4D_AU_COLUMNS],
-            dtype=torch.float32,
-        ) * torch.tensor(AU_SCALE)
+        aus = torch.from_numpy(
+            self._lookup_aus(task, subject, au_frame)
+        ) * torch.tensor(LIBREFACE_AU_SCALE)
 
         image = self.load_raw(subject=subject, task=task, img_frame=img_frame)
         if self.transform is not None:
@@ -227,16 +249,7 @@ class BP4DDataset(VisionDataset):
 
         candidates = self.subject_index[subject]
         if self.min_au_distance > 0:
-            src_aus = np.nan_to_num(
-                np.array(
-                    [
-                        float(row.get(BP4D_AU_COLUMN_MAP[col], float("nan")))
-                        for col in BP4D_AU_COLUMNS
-                    ],
-                    dtype=np.float32,
-                ),
-                nan=0.0,
-            )
+            src_aus = np.nan_to_num(self._lookup_aus(task, subject, au_frame), nan=0.0)
             valid = [
                 (idx, f, aus_vec)
                 for idx, f, aus_vec in candidates
@@ -257,13 +270,9 @@ class BP4DDataset(VisionDataset):
         )
         if self.transform is not None:
             target_image = self.transform(target_image)
-        target_aus = torch.tensor(
-            [
-                target_row.get(BP4D_AU_COLUMN_MAP[col], float("nan"))
-                for col in BP4D_AU_COLUMNS
-            ],
-            dtype=torch.float32,
-        ) * torch.tensor(AU_SCALE)
+        target_aus = torch.from_numpy(
+            self._lookup_aus(target_task, subject, int(target_row["frame"]))
+        ) * torch.tensor(LIBREFACE_AU_SCALE)
 
         face = (
             torch.from_numpy(pre_f[subject]["faces"][pos]) if self.load_face else None

@@ -73,9 +73,11 @@ FFHQ_IMAGES_DIR = (
 )
 FFHQ_INDEX_PATH = FFHQ_DATA_DIR / "ffhq_index.parquet"
 FFHQ_CAPTIONS_PATH = FFHQ_DATA_DIR / "ffhq_captions.parquet"
-LIBREFACE_FFHQ_PATH = FFHQ_DATA_DIR / "ffhq_libreface.parquet"
 FFHQ_EMBEDDINGS_PATH = FFHQ_DATA_DIR / "ffhq_embeddings.h5"
 FFHQ_PREPROCESSED_PATH = FFHQ_DATA_DIR / "ffhq_preprocessed.h5"
+
+LIBREFACE_FFHQ_PATH = FFHQ_DATA_DIR / "ffhq_libreface.parquet"
+LIBREFACE_BP4D_DIR = DATA_DIR / "BP4D" / "libreface"
 
 FFHQ_DATA_DIR.mkdir(exist_ok=True, parents=True)
 
