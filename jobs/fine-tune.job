@@ -15,7 +15,7 @@ module load uv/0.7.13-GCCcore-14.2.0
 
 export UV_NO_SYNC=1
 export UV_OFFLINE=1
-export WANDB_MODE=offline
+#export WANDB_MODE=offline
 export WANDB_JOB_TYPE=fine-tuning
 export OMP_NUM_THREADS=6
 export NO_ALBUMENTATIONS_UPDATE=1
