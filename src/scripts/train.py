@@ -64,7 +64,12 @@ def train(cfg: Args) -> None:
 
     unet, vae, text_encoder, tokenizer, scheduler, au_procs = load_model(params)
     unet, vae, text_encoder, au_procs = freeze_model_layers(
-        unet, vae, text_encoder, au_procs, params.lora
+        unet,
+        vae,
+        text_encoder,
+        au_procs,
+        params.lora,
+        skip_lora_init=params.adapter_weights is not None,
     )
     if params.gradient_checkpointing:
         unet.enable_gradient_checkpointing()

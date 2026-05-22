@@ -142,6 +142,7 @@ def freeze_model_layers(
     text_encoder: CLIPTextModel,
     au_procs: nn.ModuleDict,
     lora_cfg: LoraParams,
+    skip_lora_init: bool = False,
 ) -> tuple[UNet2DConditionModel, AutoencoderKL, CLIPTextModel, nn.ModuleDict]:
     """Freeze the layers of the given models, optionally adding LoRA to the UNet.
 
@@ -157,6 +158,11 @@ def freeze_model_layers(
         lora_cfg:
             LoRA configuration. If ``lora_cfg.enabled`` is True, LoRA adapters
             are injected into the UNet attention layers before freezing.
+        skip_lora_init (optional):
+            Skip ``unet.add_adapter`` even when ``lora_cfg.enabled`` is True.
+            Pass True when ``load_au_adapter`` will initialise LoRA from a
+            checkpoint (so rank is inferred from saved weights, not config).
+            Defaults to False.
 
     Returns:
         The frozen models.
@@ -168,7 +174,7 @@ def freeze_model_layers(
         for p in unet.encoder_hid_proj.parameters():
             p.requires_grad = False
 
-    if lora_cfg.enabled:
+    if lora_cfg.enabled and not skip_lora_init:
         lora_config = LoraConfig(
             r=lora_cfg.rank,
             lora_alpha=lora_cfg.alpha if lora_cfg.alpha is not None else lora_cfg.rank,
