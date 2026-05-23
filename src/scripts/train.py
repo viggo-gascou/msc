@@ -34,7 +34,7 @@ from msc.train_utils import (
 def train(cfg: Args) -> None:
     """Train AU adapter on BP4D/FFHQ."""
     load_dotenv()
-    set_seed(RANDOM_SEED)
+    set_seed(RANDOM_SEED, device_specific=True)
 
     params = cfg.parameters
     opt_cfg = params.optimizer
@@ -210,12 +210,9 @@ def train(cfg: Args) -> None:
                 logger.info(f"Saved best model (val loss {best_val_loss:.4f})")
         else:
             patience_counter += 1
-            if (
-                params.early_stopping
-                and patience_counter >= params.patience
-                and accelerator.is_main_process
-            ):
-                logger.info(f"Early stopping after {epoch + 1} epochs")
+            if params.early_stopping and patience_counter >= params.patience:
+                if accelerator.is_main_process:
+                    logger.info(f"Early stopping after {epoch + 1} epochs")
                 break
 
         if (epoch + 1) % params.checkpoint_every == 0 and accelerator.is_main_process:
@@ -232,6 +229,7 @@ def train(cfg: Args) -> None:
             )
             logger.info(f"Saved checkpoint at epoch {epoch + 1}")
 
+    accelerator.wait_for_everyone()
     test_loss = evaluate(
         unet,
         vae,
