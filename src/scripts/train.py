@@ -34,7 +34,7 @@ from msc.train_utils import (
 def train(cfg: Args) -> None:
     """Train AU adapter on BP4D/FFHQ."""
     load_dotenv()
-    set_seed(RANDOM_SEED, device_specific=True)
+    set_seed(RANDOM_SEED)
 
     params = cfg.parameters
     opt_cfg = params.optimizer
