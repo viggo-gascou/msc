@@ -51,6 +51,7 @@ accelerate launch --multi_gpu \
     --parameters.dataloader.num-workers 2 \
     --parameters.gradient-accumulation-steps 8 \
     --parameters.gradient-checkpointing \
+    --parameters.no-early-stopping \
     --parameters.lora.enabled \
     --parameters.lora.rank 16
 SCRIPT_EXIT=$?
