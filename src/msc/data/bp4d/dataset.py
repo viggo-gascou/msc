@@ -19,10 +19,10 @@ from ...constants import (
     BP4D_EMBEDDINGS_DIR,
     BP4D_PREPROCESSED_DIR,
     BP4D_SEQUENCES_DIR,
-    LIBREFACE_AU_COLUMNS,
-    LIBREFACE_AU_SCALE,
+    PYFEAT_AU_COLUMNS,
+    PYFEAT_AU_SCALE,
 )
-from .utils import load_index, load_libreface_aus, resolve_frame_path
+from .utils import load_index, load_pyfeat_aus, resolve_frame_path
 
 
 class BP4DSample(t.TypedDict):
@@ -130,7 +130,7 @@ class BP4DDataset(VisionDataset):
 
         self.index = index.reset_index(drop=True)
         self._lf_aus: dict[str, dict[tuple[str, int], np.ndarray]] = (
-            load_libreface_aus()
+            load_pyfeat_aus()
         )
         valid = {
             (task, subj, frame)
@@ -148,7 +148,7 @@ class BP4DDataset(VisionDataset):
         if dropped:
             logger.warning(
                 f"BP4DDataset: dropped {dropped}/{before} frames"
-                " with no LibreFace detection"
+                " with no py-feat detection"
             )
 
         self.seq_index: defaultdict[
@@ -202,7 +202,7 @@ class BP4DDataset(VisionDataset):
             aus = task_dict.get((subject, frame))
             if aus is not None:
                 return aus
-        return np.full(len(LIBREFACE_AU_COLUMNS), float("nan"), dtype=np.float32)
+        return np.full(len(PYFEAT_AU_COLUMNS), float("nan"), dtype=np.float32)
 
     def __len__(self) -> int:
         """Return the number of samples in the dataset."""
@@ -239,7 +239,7 @@ class BP4DDataset(VisionDataset):
 
         aus = torch.from_numpy(
             self._lookup_aus(task, subject, au_frame)
-        ) * torch.tensor(LIBREFACE_AU_SCALE)
+        ) * torch.tensor(PYFEAT_AU_SCALE)
 
         image = self.load_raw(subject=subject, task=task, img_frame=img_frame)
         if self.transform is not None:
@@ -272,7 +272,7 @@ class BP4DDataset(VisionDataset):
             target_image = self.transform(target_image)
         target_aus = torch.from_numpy(
             self._lookup_aus(target_task, subject, int(target_row["frame"]))
-        ) * torch.tensor(LIBREFACE_AU_SCALE)
+        ) * torch.tensor(PYFEAT_AU_SCALE)
 
         face = (
             torch.from_numpy(pre_f[subject]["faces"][pos]) if self.load_face else None

@@ -90,6 +90,7 @@ PYFEAT_AU_COLUMNS: list[str] = [
 ]
 PYFEAT_AU_SCALE: list[float] = [1.0] * len(PYFEAT_AU_COLUMNS)
 LIBREFACE_BP4D_DIR = DATA_DIR / "BP4D" / "libreface"
+PYFEAT_BP4D_DIR = DATA_DIR / "BP4D" / "pyfeat"
 
 FFHQ_DATA_DIR.mkdir(exist_ok=True, parents=True)
 
