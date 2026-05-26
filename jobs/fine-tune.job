@@ -2,11 +2,11 @@
 
 #SBATCH --job-name=semedit-finetune
 #SBATCH --output=logs/SLURM/finetune.%j.out
-#SBATCH --cpus-per-task=6
+#SBATCH --cpus-per-task=8
 #SBATCH --mem=64G
-#SBATCH --gres=gpu:a30:4
-#SBATCH --time=3-00:00:00
-#SBATCH --partition=acltr
+#SBATCH --gres=gpu:a100_40gb:4
+#SBATCH --time=1-00:00:00
+#SBATCH --partition=scavenge
 #SBATCH --mail-type=BEGIN,END
 
 ## SETUP
@@ -17,7 +17,7 @@ export UV_NO_SYNC=1
 export UV_OFFLINE=1
 #export WANDB_MODE=offline
 export WANDB_JOB_TYPE=fine-tuning
-export OMP_NUM_THREADS=6
+export OMP_NUM_THREADS=4
 export NO_ALBUMENTATIONS_UPDATE=1
 
 ## RUN
@@ -47,9 +47,9 @@ accelerate launch --multi_gpu \
     --parameters.dataset bp4d \
     --parameters.adapter-weights "${PRETRAIN_CKPT}/best_au_adapter.safetensors" \
     --parameters.optimizer.lr 1e-5 \
-    --parameters.dataloader.batch-size 10 \
-    --parameters.dataloader.num-workers 2 \
-    --parameters.gradient-accumulation-steps 8 \
+    --parameters.dataloader.batch-size 16 \
+    --parameters.dataloader.num-workers 4 \
+    --parameters.gradient-accumulation-steps 5 \
     --parameters.gradient-checkpointing \
     --parameters.no-early-stopping \
     --parameters.lora.enabled \

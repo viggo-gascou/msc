@@ -5,7 +5,7 @@
 #SBATCH --cpus-per-task=6
 #SBATCH --mem=64G
 #SBATCH --gres=gpu:a100_40gb:4
-#SBATCH --time=3-00:00:00
+#SBATCH --time=1-00:00:00
 #SBATCH --partition=scavenge
 #SBATCH --mail-type=BEGIN,END
 
