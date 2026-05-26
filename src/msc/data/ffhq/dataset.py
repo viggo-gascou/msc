@@ -15,8 +15,8 @@ from ...constants import (
     FFHQ_CAPTIONS_PATH,
     FFHQ_EMBEDDINGS_PATH,
     FFHQ_IMAGES_DIR,
-    LIBREFACE_AU_COLUMNS,
-    LIBREFACE_AU_SCALE,
+    PYFEAT_AU_COLUMNS,
+    PYFEAT_AU_SCALE,
 )
 from .utils import load_ffhq_df
 
@@ -129,8 +129,8 @@ class FFHQDataset(Dataset):
         arcface = torch.from_numpy(self.open_h5()[stem][:].copy())
 
         aus = torch.tensor(
-            [float(row[col]) for col in LIBREFACE_AU_COLUMNS], dtype=torch.float32
-        ) * torch.tensor(LIBREFACE_AU_SCALE)
+            [float(row[col]) for col in PYFEAT_AU_COLUMNS], dtype=torch.float32
+        ) * torch.tensor(PYFEAT_AU_SCALE)
 
         caption: str = str(row["caption"])
 

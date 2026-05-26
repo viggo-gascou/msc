@@ -13,9 +13,9 @@ from diffusers import UNet2DConditionModel
 from diffusers.models.attention_processor import Attention, AttnProcessor2_0
 from safetensors.torch import load_file, save_file
 
-from .constants import BP4D_AU_COLUMNS, BP4D_AU_INTENSITY_COLUMNS, LIBREFACE_AU_COLUMNS
+from .constants import BP4D_AU_COLUMNS, BP4D_AU_INTENSITY_COLUMNS, PYFEAT_AU_COLUMNS
 
-NUM_AUS: int = len(LIBREFACE_AU_COLUMNS)  # 17
+NUM_AUS: int = len(PYFEAT_AU_COLUMNS)  # 20
 
 # Per-AU scale: intensity AUs (0-5) are normalised to [0,1]; occurrence AUs
 # (0/1) are left unchanged so all inputs share the same scale.

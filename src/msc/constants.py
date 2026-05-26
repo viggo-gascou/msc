@@ -9,13 +9,17 @@ DATA_DIR = PROJECT_ROOT / "data"
 CONFIG_DIR = PROJECT_ROOT / "config"
 LOG_DIR = PROJECT_ROOT / "logs"
 MODEL_DIR = PROJECT_ROOT / "models"
-FIGURES_DIR = PROJECT_ROOT / "figures"
+RESULTS_DIR = PROJECT_ROOT / "results"
+FIGURES_DIR = RESULTS_DIR / "figures"
+TABLES_DIR = RESULTS_DIR / "tables"
 
 CACHE_DIR.mkdir(exist_ok=True, parents=True)
 DATA_DIR.mkdir(exist_ok=True, parents=True)
 LOG_DIR.mkdir(exist_ok=True, parents=True)
 MODEL_DIR.mkdir(exist_ok=True, parents=True)
+RESULTS_DIR.mkdir(exist_ok=True, parents=True)
 FIGURES_DIR.mkdir(exist_ok=True, parents=True)
+TABLES_DIR.mkdir(exist_ok=True, parents=True)
 
 # BP4D data constants
 # Raw sequences and AU coding live in the shared group folder on HPC;
@@ -77,6 +81,14 @@ FFHQ_EMBEDDINGS_PATH = FFHQ_DATA_DIR / "ffhq_embeddings.h5"
 FFHQ_PREPROCESSED_PATH = FFHQ_DATA_DIR / "ffhq_preprocessed.h5"
 
 LIBREFACE_FFHQ_PATH = FFHQ_DATA_DIR / "ffhq_libreface.parquet"
+PYFEAT_FFHQ_PATH = FFHQ_DATA_DIR / "ffhq_pyfeat.parquet"
+
+PYFEAT_AU_COLUMNS: list[str] = [
+    "AU01", "AU02", "AU04", "AU05", "AU06", "AU07", "AU09", "AU10",
+    "AU11", "AU12", "AU14", "AU15", "AU17", "AU20", "AU23", "AU24",
+    "AU25", "AU26", "AU28", "AU43",
+]
+PYFEAT_AU_SCALE: list[float] = [1.0] * len(PYFEAT_AU_COLUMNS)
 LIBREFACE_BP4D_DIR = DATA_DIR / "BP4D" / "libreface"
 
 FFHQ_DATA_DIR.mkdir(exist_ok=True, parents=True)
