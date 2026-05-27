@@ -89,6 +89,9 @@ PYFEAT_AU_COLUMNS: list[str] = [
     "AU25", "AU26", "AU28", "AU43",
 ]
 PYFEAT_AU_SCALE: list[float] = [1.0] * len(PYFEAT_AU_COLUMNS)
+PYFEAT_AU_NAME_TO_IDX: dict[str, int] = {
+    au: idx for idx, au in enumerate(PYFEAT_AU_COLUMNS)
+}
 LIBREFACE_BP4D_DIR = DATA_DIR / "BP4D" / "libreface"
 PYFEAT_BP4D_DIR = DATA_DIR / "BP4D" / "pyfeat"
 

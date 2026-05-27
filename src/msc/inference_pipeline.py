@@ -15,9 +15,9 @@ from PIL import Image
 
 from .au_adapter import AUEncoder, IdentityAdapter
 from .constants import (
-    LIBREFACE_AU_COLUMNS,
-    LIBREFACE_AU_NAME_TO_IDX,
-    LIBREFACE_AU_SCALE,
+    PYFEAT_AU_COLUMNS,
+    PYFEAT_AU_NAME_TO_IDX,
+    PYFEAT_AU_SCALE,
 )
 from .face_embeddings.arcface import ArcFaceEmbedding
 from .torch_utils import tensor_to_bgr
@@ -93,13 +93,13 @@ class AUAdapterPipeline(StableDiffusionImg2ImgPipeline):
         """
         dtype = next(self.au_encoder.parameters()).dtype
         if isinstance(aus, dict):
-            values = [0.0] * len(LIBREFACE_AU_COLUMNS)
+            values = [0.0] * len(PYFEAT_AU_COLUMNS)
             for au_name, val in aus.items():
-                if (idx := LIBREFACE_AU_NAME_TO_IDX.get(au_name)) is not None:
+                if (idx := PYFEAT_AU_NAME_TO_IDX.get(au_name)) is not None:
                     values[idx] = val
             aus = (
                 torch.tensor(values, dtype=torch.float32)
-                * torch.tensor(LIBREFACE_AU_SCALE, dtype=torch.float32)
+                * torch.tensor(PYFEAT_AU_SCALE, dtype=torch.float32)
             ).unsqueeze(0)
         aus = aus.to(device=arcface_embeds.device, dtype=dtype)
         arcface_embeds = arcface_embeds.to(dtype=dtype)
