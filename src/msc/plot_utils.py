@@ -14,6 +14,7 @@ PLOTTING_STYLE: dict[str, bool | str | int | list[str]] = {
     "legend.fontsize": 11,
     "axes.spines.top": False,
     "axes.spines.right": False,
+    "figure.dpi": 300,
     "savefig.dpi": 300,
     "savefig.bbox": "tight",
 }
@@ -25,5 +26,5 @@ def set_plotting_style() -> None:
     Calls sns.set_theme first (whitegrid base), then overrides font and
     axis settings via rcParams so they take precedence over seaborn defaults.
     """
-    sns.set_theme(style="whitegrid", context="paper")
+    sns.set_theme(style="ticks", context="paper")
     plt.rcParams.update(PLOTTING_STYLE)
