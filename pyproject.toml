@@ -49,6 +49,7 @@ dev = [
     "ipykernel>=7.2.0",
     "jupyter>=1.1.1",
     "seaborn>=0.13.2",
+    "marimo[recommended]>=0.23.8",
 ]
 
 [tool.uv.sources]
@@ -85,6 +86,9 @@ default-groups = []
 [project.scripts]
 train = "scripts.train:train"
 inference = "scripts.inference:inference"
+
+[tool.marimo.runtime]
+watcher_on_save = "autorun"
 
 [tool.ruff]
 target-version = "py312"
