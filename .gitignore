@@ -122,7 +122,7 @@ checkpoints/best_au_adapter.safetensors
 *.tiff
 
 # generated outputs
-output_data/images/
+output_data/
 
 # any model files
 *.safetensors
@@ -131,4 +131,6 @@ output_data/images/
 
 # Claude Code
 CLAUDE.md
-output_data/viz_stable_diffusion_details
+
+# Drawio backups
+**/.*.drawio.bkp

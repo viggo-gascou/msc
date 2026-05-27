@@ -3,7 +3,7 @@
 #SBATCH --job-name=semedit-pretrain
 #SBATCH --output=logs/SLURM/pretrain.%j.out
 #SBATCH --cpus-per-task=6
-#SBATCH --mem-per-cpu=6G
+#SBATCH --mem=64G
 #SBATCH --gres=gpu:a100_40gb:4
 #SBATCH --time=1-00:00:00
 #SBATCH --partition=scavenge
@@ -21,7 +21,7 @@ export UV_NO_SYNC=1
 export UV_OFFLINE=1
 
 # Log wandb offline; sync with wandb-sync.job after
-export WANDB_MODE=offline
+#export WANDB_MODE=offline
 export WANDB_JOB_TYPE=pre-training
 
 # Set this to match "cpus-per-task", supresses ONNX warning on cpu affinity
@@ -49,10 +49,10 @@ accelerate launch --multi_gpu \
     --mixed_precision bf16 \
     --dynamo_backend no \
     src/scripts/train.py \
-    --parameters.unet-model "SG161222/Realistic_Vision_V4.0_noVAE" \
     --parameters.dataset "ffhq" \
     --parameters.optimizer.lr 1e-4 \
     --parameters.dataloader.batch-size 16 \
+    --parameters.dataloader.num-workers 2 \
     --parameters.gradient-accumulation-steps 5 \
     --parameters.no-early-stopping \
     --parameters.lora.enabled \

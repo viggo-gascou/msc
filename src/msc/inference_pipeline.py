@@ -1,4 +1,4 @@
-"""MSCPipeline: Stable Diffusion with AU expression + FaceID identity conditioning."""
+"""AUAdapterPipeline: Stable Diffusion with AU expression + identity conditioning."""
 
 from __future__ import annotations
 
@@ -13,17 +13,21 @@ from diffusers.pipelines.stable_diffusion.pipeline_stable_diffusion_img2img impo
 )
 from PIL import Image
 
-from .au_adapter import AU_SCALE, AUEncoder, IdentityAdapter, MLPProjModel
-from .constants import BP4D_AU_COLUMNS
+from .au_adapter import AUEncoder, IdentityAdapter
+from .constants import (
+    PYFEAT_AU_COLUMNS,
+    PYFEAT_AU_NAME_TO_IDX,
+    PYFEAT_AU_SCALE,
+)
 from .face_embeddings.arcface import ArcFaceEmbedding
 from .torch_utils import tensor_to_bgr
 
 
-class AUIPAdapterPipeline(StableDiffusionImg2ImgPipeline):
-    """StableDiffusionPipeline extended with AU expression and FaceID conditioning.
+class AUAdapterPipeline(StableDiffusionImg2ImgPipeline):
+    """StableDiffusionPipeline extended with AU expression and identity conditioning.
 
     Use `from_pipeline` to construct an instance from an existing
-    `StableDiffusionPipeline` that already has `AUIPAttnProcessor` s
+    `StableDiffusionPipeline` that already has `AUAttnProcessor` s
     installed in its UNet.
 
     At inference the pipeline:
@@ -34,9 +38,7 @@ class AUIPAdapterPipeline(StableDiffusionImg2ImgPipeline):
        for classifier-free guidance.
     3. Personalises the conditional AU tokens with `IdentityAdapter` so the
        expression encoding is subject-specific.
-    4. Projects the ArcFace embedding to IP-Adapter face tokens via
-       `encode_image`.
-    5. Delegates the full denoising loop to the parent `StableDiffusionPipeline`
+    4. Delegates the full denoising loop to the parent `StableDiffusionPipeline`
        via `cross_attention_kwargs`.
     """
 
@@ -46,56 +48,29 @@ class AUIPAdapterPipeline(StableDiffusionImg2ImgPipeline):
         pipeline: StableDiffusionImg2ImgPipeline | StableDiffusionPipeline,
         au_encoder: AUEncoder,
         identity_adapter: IdentityAdapter,
-        face_proj: MLPProjModel,
         arcface_extractor: ArcFaceEmbedding | None = None,
-    ) -> AUIPAdapterPipeline:
+    ) -> AUAdapterPipeline:
         """Create the class from a prepared pipeline and AU adapter components.
 
         Args:
             pipeline:
-                Base `StableDiffusionImg2ImgPipeline` with `AUIPAttnProcessor` s
+                Base `StableDiffusionImg2ImgPipeline` with `AUAttnProcessor` s
                 already installed in its UNet (via `setup_unet_processors`).
             au_encoder: Trained AUEncoder.
             identity_adapter: Trained IdentityAdapter.
-            face_proj: Pretrained face projector loaded from IP-Adapter checkpoint.
             arcface_extractor:
                 Optional `ArcFaceEmbedding` used to extract embeddings from raw
                 images at call time. If ``None``, ``arcface_embeds`` must be
                 supplied directly to ``__call__``.
 
         Returns:
-            AUIPAdapterPipeline ready for inference.
+            AUAdapterPipeline ready for inference.
         """
         instance = cls(**pipeline.components)
         instance.au_encoder = au_encoder
         instance.identity_adapter = identity_adapter
-        instance.face_proj = face_proj
         instance.arcface_extractor = arcface_extractor
         return instance
-
-    def encode_identity(
-        self, arcface_embeds: torch.Tensor, do_cfg: bool = True
-    ) -> torch.Tensor:
-        """Project ArcFace embeddings to IP-Adapter face tokens.
-
-        For CFG the uncond pass projects zeros through ``face_proj`` so the
-        attention processor sees a neutral identity for the unconditional branch.
-
-        Args:
-            arcface_embeds: ArcFace embeddings of shape (B, 512).
-            do_cfg: Whether to prepend uncond tokens for classifier-free guidance.
-
-        Returns:
-            Face tokens of shape (B, num_tokens, dim) without CFG or
-            (2B, num_tokens, dim) with CFG — uncond first, cond second.
-        """
-        dtype = next(self.face_proj.parameters()).dtype
-        arcface_embeds = arcface_embeds.to(dtype=dtype)
-        id_tokens = self.face_proj(arcface_embeds)
-        if do_cfg:
-            uncond_id_tokens = self.face_proj(torch.zeros_like(arcface_embeds))
-            id_tokens = torch.cat([uncond_id_tokens, id_tokens], dim=0)
-        return id_tokens
 
     def encode_aus(
         self, aus: torch.Tensor | dict[str, float], arcface_embeds: torch.Tensor
@@ -118,9 +93,14 @@ class AUIPAdapterPipeline(StableDiffusionImg2ImgPipeline):
         """
         dtype = next(self.au_encoder.parameters()).dtype
         if isinstance(aus, dict):
-            values = [aus.get(col, 0.0) for col in BP4D_AU_COLUMNS]
-            aus = torch.tensor(values, dtype=torch.float32).unsqueeze(0)
-            aus = aus * torch.tensor(AU_SCALE, dtype=torch.float32)
+            values = [0.0] * len(PYFEAT_AU_COLUMNS)
+            for au_name, val in aus.items():
+                if (idx := PYFEAT_AU_NAME_TO_IDX.get(au_name)) is not None:
+                    values[idx] = val
+            aus = (
+                torch.tensor(values, dtype=torch.float32)
+                * torch.tensor(PYFEAT_AU_SCALE, dtype=torch.float32)
+            ).unsqueeze(0)
         aus = aus.to(device=arcface_embeds.device, dtype=dtype)
         arcface_embeds = arcface_embeds.to(dtype=dtype)
         au_tokens = self.au_encoder.encode(aus)
@@ -142,10 +122,9 @@ class AUIPAdapterPipeline(StableDiffusionImg2ImgPipeline):
         strength: float = 0.5,
         negative_prompt: str | list[str] | None = None,
         au_scale: float = 1.0,
-        id_scale: float = 0.6,
         **kwargs,
     ) -> StableDiffusionPipelineOutput:
-        """Generate images conditioned on AU values and a FaceID embedding.
+        """Generate images conditioned on AU values and an identity embedding.
 
         Either ``image`` or ``arcface_embeds`` must be provided. If ``image``
         is given, the ArcFace embedding is extracted on the fly using the
@@ -170,7 +149,6 @@ class AUIPAdapterPipeline(StableDiffusionImg2ImgPipeline):
                 editing, 0.4–0.6 is recommended.
             negative_prompt: Optional negative prompt(s).
             au_scale: Expression conditioning strength.
-            id_scale: Identity conditioning strength.
             **kwargs: Forwarded to `StableDiffusionPipeline.__call__`.
 
         Returns:
@@ -215,10 +193,7 @@ class AUIPAdapterPipeline(StableDiffusionImg2ImgPipeline):
             else:
                 pil_image = None
 
-        do_cfg = guidance_scale > 1.0
-
         au_tokens = self.encode_aus(aus, arcface_embeds)
-        id_tokens = self.encode_identity(arcface_embeds, do_cfg=do_cfg)
 
         if pil_image is None:
             raise ValueError("`image` is required for img2img inference.")
@@ -232,11 +207,6 @@ class AUIPAdapterPipeline(StableDiffusionImg2ImgPipeline):
             num_inference_steps=num_inference_steps,
             guidance_scale=guidance_scale,
             negative_prompt=negative_prompt,
-            cross_attention_kwargs={
-                "id_embedding": id_tokens,
-                "id_scale": id_scale,
-                "au_embedding": au_tokens,
-                "au_scale": au_scale,
-            },
+            cross_attention_kwargs={"au_embedding": au_tokens, "au_scale": au_scale},
             **kwargs,
         )

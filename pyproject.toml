@@ -48,19 +48,36 @@ dev = [
     "pip>=26.1",
     "ipykernel>=7.2.0",
     "jupyter>=1.1.1",
+    "seaborn>=0.13.2",
+    "marimo[recommended]>=0.23.8",
 ]
 
 [tool.uv.sources]
 torch = [
-  { index = "pytorch", marker = "sys_platform == 'linux' or sys_platform == 'win32'" },
+  { index = "pytorch-cu126", marker = "sys_platform == 'linux' and platform_machine == 'x86_64'" },
+  { index = "pytorch-cu130", marker = "sys_platform == 'linux' and platform_machine == 'aarch64'" },
 ]
 torchvision = [
-  { index = "pytorch", marker = "sys_platform == 'linux' or sys_platform == 'win32'" },
+  { index = "pytorch-cu126", marker = "sys_platform == 'linux' and platform_machine == 'x86_64'" },
+  { index = "pytorch-cu130", marker = "sys_platform == 'linux' and platform_machine == 'aarch64'" },
+]
+onnxruntime-gpu = [
+  { index = "onnxruntime-cuda-13", marker = "sys_platform == 'linux' and platform_machine == 'aarch64'" },
 ]
 
 [[tool.uv.index]]
-name = "pytorch"
+name = "pytorch-cu126"
 url = "https://download.pytorch.org/whl/cu126"
+explicit = true
+
+[[tool.uv.index]]
+name = "pytorch-cu130"
+url = "https://download.pytorch.org/whl/cu130"
+explicit = true
+
+[[tool.uv.index]]
+name = "onnxruntime-cuda-13"
+url = "https://aiinfra.pkgs.visualstudio.com/PublicPackages/_packaging/onnxruntime-cuda-13/pypi/simple/"
 explicit = true
 
 [tool.uv]
@@ -69,6 +86,9 @@ default-groups = []
 [project.scripts]
 train = "scripts.train:train"
 inference = "scripts.inference:inference"
+
+[tool.marimo.runtime]
+watcher_on_save = "autorun"
 
 [tool.ruff]
 target-version = "py312"

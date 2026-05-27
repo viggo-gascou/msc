@@ -6,7 +6,7 @@ import h5py
 import pandas as pd
 from loguru import logger
 
-from ...constants import FFHQ_EMBEDDINGS_PATH, FFHQ_INDEX_PATH, LIBREFACE_FFHQ_PATH
+from ...constants import FFHQ_EMBEDDINGS_PATH, FFHQ_INDEX_PATH, PYFEAT_FFHQ_PATH
 
 
 def load_ffhq_df() -> pd.DataFrame:
@@ -25,14 +25,14 @@ def load_ffhq_df() -> pd.DataFrame:
           If the LibreFace parquet, age index, or embeddings HDF5 are missing.
     """
     for path, hint in [
-        (LIBREFACE_FFHQ_PATH, "run libreface_ffhq.py first"),
+        (PYFEAT_FFHQ_PATH, "run pyfeat_ffhq.py first"),
         (FFHQ_INDEX_PATH, "run build_ffhq_index.py first"),
         (FFHQ_EMBEDDINGS_PATH, "run precompute_embeddings.py --dataset ffhq first"),
     ]:
         if not path.exists():
             raise FileNotFoundError(f"{path} not found — {hint}")
 
-    libreface = pd.read_parquet(LIBREFACE_FFHQ_PATH)
+    libreface = pd.read_parquet(PYFEAT_FFHQ_PATH)
     libreface["image_number"] = libreface["image"].apply(lambda p: Path(p).name)
 
     index = pd.read_parquet(FFHQ_INDEX_PATH, columns=["image_number", "split"])

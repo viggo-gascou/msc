@@ -1,6 +1,7 @@
-"""FaceID IP-Adapter + AU adapter training loop on BP4D."""
+"""AU adapter training loop on BP4D/FFHQ."""
 
 import os
+from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
 
@@ -13,7 +14,7 @@ from omegaconf import OmegaConf
 from tqdm import tqdm
 from transformers import CLIPTokenizer
 
-from msc.au_adapter import AUEncoder, IdentityAdapter, save_au_adapter
+from msc.au_adapter import AUEncoder, IdentityAdapter, load_au_adapter, save_au_adapter
 from msc.cli import cli
 from msc.config import Args
 from msc.constants import RANDOM_SEED
@@ -31,13 +32,12 @@ from msc.train_utils import (
 
 @cli()
 def train(cfg: Args) -> None:
-    """Train AU adapter on BP4D with FaceID IP-Adapter conditioning."""
+    """Train AU adapter on BP4D/FFHQ."""
     load_dotenv()
     set_seed(RANDOM_SEED)
 
     params = cfg.parameters
     opt_cfg = params.optimizer
-    ip_cfg = cfg.ip_adapter
     wandb_cfg = cfg.wandb
 
     accelerator = Accelerator(
@@ -53,34 +53,23 @@ def train(cfg: Args) -> None:
     if wandb_cfg.enabled:
         accelerator.init_trackers(
             project_name=wandb_cfg.project,
-            config={
-                "learning_rate": opt_cfg.learning_rate,
-                "weight_decay": opt_cfg.weight_decay,
-                "adam_beta1": opt_cfg.adam_beta1,
-                "adam_beta2": opt_cfg.adam_beta2,
-                "adam_eps": opt_cfg.adam_eps,
-                "batch_size": params.dataloader.batch_size,
-                "epochs": params.epochs,
-                "augmentation_proba": params.augmentation_proba,
-                "early_stopping": params.early_stopping,
-                "patience": params.patience,
-                "unet_model": params.unet_model,
-                "ip_adapter_repo": ip_cfg.repo,
-                "ip_adapter_weight_id": ip_cfg.weight_id,
-            },
             init_kwargs={
                 "wandb": {
                     "entity": wandb_cfg.entity,
                     "name": wandb_cfg.run_name or None,
+                    "config": asdict(params),
                 }
             },
         )
 
-    unet, vae, text_encoder, tokenizer, scheduler, au_procs, face_proj = load_model(
-        params, ip_cfg
-    )
+    unet, vae, text_encoder, tokenizer, scheduler, au_procs = load_model(params)
     unet, vae, text_encoder, au_procs = freeze_model_layers(
-        unet, vae, text_encoder, au_procs, params.lora
+        unet,
+        vae,
+        text_encoder,
+        au_procs,
+        params.lora,
+        skip_lora_init=params.adapter_weights is not None,
     )
     if params.gradient_checkpointing:
         unet.enable_gradient_checkpointing()
@@ -90,12 +79,20 @@ def train(cfg: Args) -> None:
     weight_dtype = {"fp16": torch.float16, "bf16": torch.bfloat16}.get(
         accelerator.mixed_precision, torch.float32
     )
-    for model in [vae, text_encoder, face_proj]:
+    for model in [vae, text_encoder]:
         model.to(device, dtype=weight_dtype)
-    face_proj.requires_grad_(False)
 
-    au_encoder = AUEncoder()
-    identity_adapter = IdentityAdapter()
+    if params.adapter_weights is not None:
+        au_encoder, identity_adapter, au_procs = load_au_adapter(
+            params.adapter_weights, unet
+        )
+        if accelerator.is_main_process:
+            logger.info(
+                f"Loaded pre-trained adapter weights from {params.adapter_weights}"
+            )
+    else:
+        au_encoder = AUEncoder(num_tokens=params.au_num_tokens)
+        identity_adapter = IdentityAdapter()
 
     optimizer = torch.optim.AdamW(
         params=(
@@ -172,7 +169,6 @@ def train(cfg: Args) -> None:
             scheduler,
             au_encoder,
             identity_adapter,
-            face_proj,
             optimizer,
             train_loader,
             accelerator,
@@ -187,7 +183,6 @@ def train(cfg: Args) -> None:
             scheduler,
             au_encoder,
             identity_adapter,
-            face_proj,
             val_loader,
             accelerator,
             device,
@@ -215,12 +210,9 @@ def train(cfg: Args) -> None:
                 logger.info(f"Saved best model (val loss {best_val_loss:.4f})")
         else:
             patience_counter += 1
-            if (
-                params.early_stopping
-                and patience_counter >= params.patience
-                and accelerator.is_main_process
-            ):
-                logger.info(f"Early stopping after {epoch + 1} epochs")
+            if params.early_stopping and patience_counter >= params.patience:
+                if accelerator.is_main_process:
+                    logger.info(f"Early stopping after {epoch + 1} epochs")
                 break
 
         if (epoch + 1) % params.checkpoint_every == 0 and accelerator.is_main_process:
@@ -237,6 +229,7 @@ def train(cfg: Args) -> None:
             )
             logger.info(f"Saved checkpoint at epoch {epoch + 1}")
 
+    accelerator.wait_for_everyone()
     test_loss = evaluate(
         unet,
         vae,
@@ -245,7 +238,6 @@ def train(cfg: Args) -> None:
         scheduler,
         au_encoder,
         identity_adapter,
-        face_proj,
         test_loader,
         accelerator,
         device,

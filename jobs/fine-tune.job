@@ -1,8 +1,8 @@
 #!/bin/bash
 
-#SBATCH --job-name=semedit-train
-#SBATCH --output=logs/SLURM/train.%j.out
-#SBATCH --cpus-per-task=6
+#SBATCH --job-name=semedit-finetune
+#SBATCH --output=logs/SLURM/finetune.%j.out
+#SBATCH --cpus-per-task=8
 #SBATCH --mem=64G
 #SBATCH --gres=gpu:a100_40gb:4
 #SBATCH --time=1-00:00:00
@@ -11,23 +11,13 @@
 
 ## SETUP
 
-# load uv
 module load uv/0.7.13-GCCcore-14.2.0
 
-# Never sync venv
 export UV_NO_SYNC=1
-
-# Enforce offline mode to avoid any network requests from uv
 export UV_OFFLINE=1
-
-# Log wandb offline; sync with wandb-sync.job after
-export WANDB_MODE=offline
-export WANDB_JOB_TYPE=training
-
-# Set this to match "cpus-per-task", supresses ONNX warning on cpu affinity
-export OMP_NUM_THREADS=6
-
-# Disable albumentations to check for updates
+#export WANDB_MODE=offline
+export WANDB_JOB_TYPE=fine-tuning
+export OMP_NUM_THREADS=4
 export NO_ALBUMENTATIONS_UPDATE=1
 
 ## RUN
@@ -37,22 +27,30 @@ nvidia-smi --query-gpu=index,gpu_name,memory.total --format=csv,noheader,nounits
 VRAM_TOTAL=$(nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits | awk '{s+=$1} END {print s}')
 echo "Total VRAM: ${VRAM_TOTAL} MiB across $(nvidia-smi --query-gpu=name --format=csv,noheader | wc -l) GPUs"
 
-# Activate the virtual environment
 echo "Activating virtual environment..."
 source .venv/bin/activate
 
+PRETRAIN_CKPT=$(ls -d checkpoints/${PRETRAIN_JOB_ID}_* 2>/dev/null | head -1)
+if [ -z "$PRETRAIN_CKPT" ]; then
+    echo "ERROR: no checkpoint found for job ${PRETRAIN_JOB_ID}"
+    exit 1
+fi
+echo "Using pre-trained checkpoint: ${PRETRAIN_CKPT}"
+
 echo "Setup complete, running script at $(date)"
-# run the script
 accelerate launch --multi_gpu \
     --num_processes 4 \
     --num_machines 1 \
     --mixed_precision bf16 \
     --dynamo_backend no \
     src/scripts/train.py \
-    --parameters.unet-model "SG161222/Realistic_Vision_V4.0_noVAE" \
-    --parameters.optimizer.lr 1e-4 \
+    --parameters.dataset bp4d \
+    --parameters.adapter-weights "${PRETRAIN_CKPT}/best_au_adapter.safetensors" \
+    --parameters.optimizer.lr 1e-5 \
     --parameters.dataloader.batch-size 16 \
+    --parameters.dataloader.num-workers 4 \
     --parameters.gradient-accumulation-steps 5 \
+    --parameters.gradient-checkpointing \
     --parameters.no-early-stopping \
     --parameters.lora.enabled \
     --parameters.lora.rank 16

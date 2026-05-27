@@ -3,27 +3,28 @@
 #SBATCH --job-name=wandb-sync
 #SBATCH --output=logs/SLURM/wandb-sync.%j.out
 #SBATCH --time=1-00:00:00
-#SBATCH --cpus-per-task=1
-#SBATCH --mem-per-cpu=1G
-#SBATCH --partition=mlgroup
+#SBATCH --cpus-per-task=2
+#SBATCH --mem-per-cpu=4G
+#SBATCH --partition=scavenge
 
 # Pass job IDs to watch as a colon-separated string, e.g.:
 #   sbatch --export=ALL,WATCH_JOBS="123:456" jobs/wandb-sync.job
 WATCH_JOBS="${WATCH_JOBS:-}"
 
-module load uv/0.7.13-GCCcore-14.2.0
 source .venv/bin/activate
 
+set -a; source .env; set +a
+
 while true; do
-    env $(cat .env | xargs) wandb sync "${WANDB_DIR}"/wandb/offline-*
+    wandb sync "${WANDB_DIR}"/wandb/latest-run
 
     if [ -n "$WATCH_JOBS" ]; then
         running=$(squeue --jobs="${WATCH_JOBS//:/ }" --noheader 2>/dev/null | wc -l)
         [ "$running" -eq 0 ] && break
     fi
 
-    sleep 300
+    sleep 120
 done
 
 # Final sync once all jobs are done
-env $(cat .env | xargs) wandb sync "${WANDB_DIR}"/wandb/offline-*
+wandb sync "${WANDB_DIR}"/wandb/latest-run

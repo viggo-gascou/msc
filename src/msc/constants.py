@@ -9,11 +9,17 @@ DATA_DIR = PROJECT_ROOT / "data"
 CONFIG_DIR = PROJECT_ROOT / "config"
 LOG_DIR = PROJECT_ROOT / "logs"
 MODEL_DIR = PROJECT_ROOT / "models"
+RESULTS_DIR = PROJECT_ROOT / "results"
+FIGURES_DIR = RESULTS_DIR / "figures"
+TABLES_DIR = RESULTS_DIR / "tables"
 
 CACHE_DIR.mkdir(exist_ok=True, parents=True)
 DATA_DIR.mkdir(exist_ok=True, parents=True)
 LOG_DIR.mkdir(exist_ok=True, parents=True)
 MODEL_DIR.mkdir(exist_ok=True, parents=True)
+RESULTS_DIR.mkdir(exist_ok=True, parents=True)
+FIGURES_DIR.mkdir(exist_ok=True, parents=True)
+TABLES_DIR.mkdir(exist_ok=True, parents=True)
 
 # BP4D data constants
 # Raw sequences and AU coding live in the shared group folder on HPC;
@@ -36,6 +42,7 @@ BP4D_DATA_DIR = (
 BP4D_INDEX_PATH = BP4D_DATA_DIR / "bp4d_index.parquet"
 BP4D_AU_DISTANCES_PATH = BP4D_DATA_DIR / "au_distances.h5"
 BP4D_VAE_LATENTS_PATH = DATA_DIR / "BP4D" / "vae_latents.h5"
+BP4D_CAPTIONS_PATH = DATA_DIR / "BP4D" / "bp4d_captions.parquet"
 
 # On HPC use the proper split indices; locally fall back to the single sample index.
 BP4D_TRAIN_INDEX_PATH = (
@@ -69,43 +76,59 @@ FFHQ_IMAGES_DIR = (
     else FFHQ_DATA_DIR / "images1024x1024"
 )
 FFHQ_INDEX_PATH = FFHQ_DATA_DIR / "ffhq_index.parquet"
-LIBREFACE_FFHQ_PATH = FFHQ_DATA_DIR / "ffhq_libreface.parquet"
+FFHQ_CAPTIONS_PATH = FFHQ_DATA_DIR / "ffhq_captions.parquet"
 FFHQ_EMBEDDINGS_PATH = FFHQ_DATA_DIR / "ffhq_embeddings.h5"
 FFHQ_PREPROCESSED_PATH = FFHQ_DATA_DIR / "ffhq_preprocessed.h5"
 
+LIBREFACE_FFHQ_PATH = FFHQ_DATA_DIR / "ffhq_libreface.parquet"
+PYFEAT_FFHQ_PATH = FFHQ_DATA_DIR / "ffhq_pyfeat.parquet"
+
+PYFEAT_AU_COLUMNS: list[str] = [
+    "AU01", "AU02", "AU04", "AU05", "AU06", "AU07", "AU09", "AU10",
+    "AU11", "AU12", "AU14", "AU15", "AU17", "AU20", "AU23", "AU24",
+    "AU25", "AU26", "AU28", "AU43",
+]
+PYFEAT_AU_SCALE: list[float] = [1.0] * len(PYFEAT_AU_COLUMNS)
+PYFEAT_AU_NAME_TO_IDX: dict[str, int] = {
+    au: idx for idx, au in enumerate(PYFEAT_AU_COLUMNS)
+}
+LIBREFACE_BP4D_DIR = DATA_DIR / "BP4D" / "libreface"
+PYFEAT_BP4D_DIR = DATA_DIR / "BP4D" / "pyfeat"
+
 FFHQ_DATA_DIR.mkdir(exist_ok=True, parents=True)
 
-# Maps each BP4D AU column name to its LibreFace counterpart (None = not in LibreFace).
-# LibreFace R = intensity [0, 1]; D = occurrence detection {0, 1}.
-# 15/23 BP4D AUs overlap; 6 are type-matched (R<->intensity or D<->binary):
-#   AU06, AU12, AU17 (both intensity), AU07, AU23, AU24 (both binary).
-# Mismatches: AU01/02/04/05/09/15/20 are BP4D binary but LibreFace R -> use intensity
-#             AU10/14 are BP4D intensity but LibreFace D → use binary col.
-# DO NOT apply AU_SCALE to FFHQ tensors — LibreFace values are already in [0, 1].
-LIBREFACE_AU_COLUMN_MAP: dict[str, str | None] = {
-    "AU01": "au_1_intensity",  # BP4D binary, LibreFace R
-    "AU02": "au_2_intensity",  # BP4D binary, LibreFace R
-    "AU04": "au_4_intensity",  # BP4D binary, LibreFace R
-    "AU05": "au_5_intensity",  # BP4D binary, LibreFace R
-    "AU06": "au_6_intensity",  # BP4D intensity, LibreFace R (type match)
-    "AU07": "au_7",  # BP4D binary, LibreFace D (type match)
-    "AU09": "au_9_intensity",  # BP4D binary, LibreFace R
-    "AU10": "au_10",  # BP4D intensity, LibreFace D
-    "AU11": None,
-    "AU12": "au_12_intensity",  # BP4D intensity, LibreFace R (type match)
-    "AU13": None,
-    "AU14": "au_14",  # BP4D intensity, LibreFace D
-    "AU15": "au_15_intensity",  # BP4D binary, LibreFace R
-    "AU16": None,
-    "AU17": "au_17_intensity",  # BP4D intensity, LibreFace R (type match)
-    "AU18": None,
-    "AU19": None,
-    "AU20": "au_20_intensity",  # BP4D binary, LibreFace R
-    "AU22": None,
-    "AU23": "au_23",  # BP4D binary, LibreFace D (type match)
-    "AU24": "au_24",  # BP4D binary, LibreFace D (type match)
-    "AU27": None,
-    "AU28": None,
+# Maps AU name to its LibreFace parquet column. R = intensity (0-5); D = binary (0/1).
+LIBREFACE_AU_COLUMN_MAP: dict[str, str] = {
+    "AU01": "au_1_intensity",  # R
+    "AU02": "au_2_intensity",  # R
+    "AU04": "au_4_intensity",  # R
+    "AU05": "au_5_intensity",  # R
+    "AU06": "au_6_intensity",  # R
+    "AU07": "au_7",  # D
+    "AU09": "au_9_intensity",  # R
+    "AU10": "au_10",  # D
+    "AU12": "au_12_intensity",  # R
+    "AU14": "au_14",  # D
+    "AU15": "au_15_intensity",  # R
+    "AU17": "au_17_intensity",  # R
+    "AU20": "au_20_intensity",  # R
+    "AU23": "au_23",  # D
+    "AU24": "au_24",  # D
+    "AU25": "au_25_intensity",  # R
+    "AU26": "au_26_intensity",  # R
+}
+
+# Ordered list of the 17 LibreFace AU columns.
+LIBREFACE_AU_COLUMNS: list[str] = list(LIBREFACE_AU_COLUMN_MAP.values())
+
+# Per-AU scale: intensity AUs (0-5) normalised to [0, 1]; binary AUs left at 1.0.
+LIBREFACE_AU_SCALE: list[float] = [
+    1.0 / 5.0 if col.endswith("_intensity") else 1.0 for col in LIBREFACE_AU_COLUMNS
+]
+
+# Maps AU name (e.g. "AU12") -> index in LIBREFACE_AU_COLUMNS.
+LIBREFACE_AU_NAME_TO_IDX: dict[str, int] = {
+    au_name: idx for idx, au_name in enumerate(LIBREFACE_AU_COLUMN_MAP)
 }
 
 # AU columns coded in BP4D, zero-padded to match FACS convention

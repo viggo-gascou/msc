@@ -12,10 +12,11 @@ from torchvision.io import ImageReadMode, decode_image
 from torchvision.tv_tensors import Image as TVImage
 
 from ...constants import (
-    BP4D_AU_COLUMNS,
+    FFHQ_CAPTIONS_PATH,
     FFHQ_EMBEDDINGS_PATH,
     FFHQ_IMAGES_DIR,
-    LIBREFACE_AU_COLUMN_MAP,
+    PYFEAT_AU_COLUMNS,
+    PYFEAT_AU_SCALE,
 )
 from .utils import load_ffhq_df
 
@@ -28,6 +29,7 @@ class FFHQSample(t.TypedDict):
     aus: torch.Tensor
     target_image: TVImage
     target_aus: torch.Tensor
+    target_caption: str
 
 
 class FFHQDataset(Dataset):
@@ -54,6 +56,7 @@ class FFHQDataset(Dataset):
         split: t.Literal["train", "val", "test"],
         transform: c.Callable | None = None,
         df: pd.DataFrame | None = None,
+        captions_path: Path | None = None,
     ) -> None:
         """Initialise the FFHQ dataset for a given split.
 
@@ -65,12 +68,23 @@ class FFHQDataset(Dataset):
             df (optional):
               Pre-loaded index DataFrame from load_ffhq_df(). Pass a shared
               instance across splits to avoid redundant disk reads. Defaults to None.
+            captions_path (optional):
+              Path to the captions parquet. Defaults to FFHQ_CAPTIONS_PATH.
+              If the file does not exist, captions will be empty strings.
         """
         super().__init__()
         self.transform = transform
         full_df = df if df is not None else load_ffhq_df()
         self.df = full_df[full_df["split"] == split].reset_index(drop=True)
         self.h5: h5py.File | None = None
+
+        cap_path = captions_path or FFHQ_CAPTIONS_PATH
+        if cap_path.exists():
+            caps = pd.read_parquet(cap_path, columns=["image_number", "caption"])
+            self.df = self.df.merge(caps, on="image_number", how="left")
+            self.df["caption"] = self.df["caption"].fillna("")
+        else:
+            self.df["caption"] = ""
 
     def open_h5(self) -> h5py.File:
         """Open the ArcFace embeddings HDF5 file, caching the handle per worker.
@@ -115,14 +129,10 @@ class FFHQDataset(Dataset):
         arcface = torch.from_numpy(self.open_h5()[stem][:].copy())
 
         aus = torch.tensor(
-            [
-                float(row[lf_col])
-                if (lf_col := LIBREFACE_AU_COLUMN_MAP[col]) is not None
-                else float("nan")
-                for col in BP4D_AU_COLUMNS
-            ],
-            dtype=torch.float32,
-        )
+            [float(row[col]) for col in PYFEAT_AU_COLUMNS], dtype=torch.float32
+        ) * torch.tensor(PYFEAT_AU_SCALE)
+
+        caption: str = str(row["caption"])
 
         sample: FFHQSample = {
             "image": image,
@@ -130,5 +140,6 @@ class FFHQDataset(Dataset):
             "aus": aus,
             "target_image": image,
             "target_aus": aus,
+            "target_caption": caption,
         }
         return sample
