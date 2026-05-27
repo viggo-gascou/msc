@@ -6,6 +6,8 @@
 #   "torch",
 #   "accelerate",
 #   "Pillow",
+#   "matplotlib",
+#   "numpy",
 # ]
 # ///
 """Text-to-image with intermediate step snapshots every 50 steps."""
@@ -13,6 +15,8 @@
 import argparse
 from pathlib import Path
 
+import matplotlib.pyplot as plt
+import numpy as np
 import torch
 from diffusers import DDIMScheduler, StableDiffusionPipeline
 from PIL import Image
@@ -77,16 +81,62 @@ def main():
     result.images[0].save(final_path)
     print(f"\nFinal image → {final_path}")
 
-    # Save a grid of all snapshots
-    cols = 5
-    rows = (len(snapshots) + cols - 1) // cols
-    w, h = snapshots[0][1].size
-    grid = Image.new("RGB", (cols * w, rows * h))
-    for i, (step, img) in enumerate(snapshots):
-        grid.paste(img, ((i % cols) * w, (i // cols) * h))
+    # Paper-quality denoising grid
+    # Rows = 200-step blocks, columns = 50-step offsets within each block.
+    # Absolute step for any cell = row_start (y-label) + column_offset (x-label).
+    steps_per_row = 200 // SNAPSHOT_EVERY  # 4 cols when SNAPSHOT_EVERY=50
+    grid_snaps = [(s, img) for s, img in snapshots if s % SNAPSHOT_EVERY == 0]
+    n_rows = (len(grid_snaps) + steps_per_row - 1) // steps_per_row
+
+    cell = 1.7  # inches per image cell
+    fig, axes = plt.subplots(
+        n_rows,
+        steps_per_row,
+        figsize=(steps_per_row * cell, n_rows * cell),
+        dpi=300,
+        squeeze=False,
+        gridspec_kw={"hspace": 0.05, "wspace": 0.04},
+    )
+    fig.patch.set_facecolor("white")
+
+    for idx, (step, img) in enumerate(grid_snaps):
+        row, col = divmod(idx, steps_per_row)
+        ax = axes[row, col]
+        ax.imshow(np.array(img))
+        ax.set_xticks([])
+        ax.set_yticks([])
+        for spine in ax.spines.values():
+            spine.set_visible(False)
+
+    for idx in range(len(grid_snaps), n_rows * steps_per_row):
+        row, col = divmod(idx, steps_per_row)
+        axes[row, col].set_visible(False)
+
+    # Column headers: offset within each 200-step block (+50, +100, +150, +200)
+    for col in range(steps_per_row):
+        axes[0, col].set_title(
+            f"+{(col + 1) * SNAPSHOT_EVERY}", fontsize=9, pad=5, color="#444444"
+        )
+
+    # Row labels (left): starting denoising step of each block (0, 200, 400, ...)
+    for row in range(n_rows):
+        axes[row, 0].set_ylabel(
+            str(row * steps_per_row * SNAPSHOT_EVERY),
+            fontsize=9,
+            rotation=0,
+            ha="right",
+            va="center",
+            labelpad=8,
+            color="#444444",
+        )
+
+    fig.supxlabel("Step offset within block", fontsize=10)
+    fig.supylabel("Denoising step", fontsize=10)
+
     grid_path = args.out_dir / "grid.png"
-    grid.save(grid_path)
-    print(f"Grid ({len(snapshots)} snapshots) → {grid_path}")
+    plt.savefig(grid_path, bbox_inches="tight", dpi=300, facecolor="white")
+    plt.close(fig)
+    print(f"Grid ({len(grid_snaps)} snapshots) → {grid_path}")
 
 
 if __name__ == "__main__":
