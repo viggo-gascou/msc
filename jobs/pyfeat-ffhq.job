@@ -1,0 +1,38 @@
+#!/bin/bash
+
+#SBATCH --job-name=pyfeat-ffhq
+#SBATCH --output=logs/SLURM/pyfeat-ffhq.%A_%a.out
+#SBATCH --cpus-per-task=8
+#SBATCH --mem=28G
+#SBATCH --gres=gpu:a100_40gb:1
+#SBATCH --time=4:00:00
+#SBATCH --partition=scavenge
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --array=0-3
+#SBATCH --mail-type=BEGIN,END
+
+## SETUP
+
+module load uv/0.7.13-GCCcore-14.2.0
+
+export NO_ALBUMENTATIONS_UPDATE=1
+export UV_HTTP_TIMEOUT=600
+
+echo "Running on $(hostname):"
+nvidia-smi --query-gpu=index,gpu_name,memory.total --format=csv,noheader,nounits | awk -F',' '{printf "  GPU %s: %s (%s MiB)\n", $1, $2, $3}'
+source .venv-pyfeat/bin/activate
+
+echo "Setup complete, running script at $(date)"
+python src/scripts/pyfeat_ffhq.py \
+    --images-dir /home/semedit/data/FFHQ/images1024x1024 \
+    --index data/FFHQ/ffhq_index.parquet \
+    --output data/FFHQ/ffhq_pyfeat.parquet \
+    --batch-size 128 \
+    --num-workers 4 \
+    --shard-idx "$SLURM_ARRAY_TASK_ID" \
+    --num-shards 4
+SCRIPT_EXIT=$?
+
+echo "Done, finished at $(date)"
+exit $SCRIPT_EXIT

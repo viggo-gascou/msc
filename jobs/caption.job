@@ -1,0 +1,38 @@
+#!/bin/bash
+
+#SBATCH --job-name=semedit-caption
+#SBATCH --output=logs/SLURM/caption.%j.out
+#SBATCH --cpus-per-task=4
+#SBATCH --mem=32G
+#SBATCH --gres=gpu:v100:1
+#SBATCH --time=12:00:00
+#SBATCH --partition=scavenge
+#SBATCH --mail-type=BEGIN,END
+
+## SETUP
+
+module load uv/0.7.13-GCCcore-14.2.0
+module load GCCcore/13.3.0
+
+export UV_NO_SYNC=1
+export UV_OFFLINE=1
+export OMP_NUM_THREADS=4
+export NO_ALBUMENTATIONS_UPDATE=1
+
+## RUN
+
+echo "Running on $(hostname):"
+nvidia-smi --query-gpu=index,gpu_name,memory.total --format=csv,noheader,nounits | awk -F',' '{printf "  GPU %s: %s (%s MiB)\n", $1, $2, $3}'
+
+echo "Activating virtual environment..."
+source .venv/bin/activate
+
+echo "Setup complete, running script at $(date)"
+python src/scripts/caption.py \
+    --dataset bp4d \
+    --batch-size 32 \
+    --save-every 1000
+SCRIPT_EXIT=$?
+
+echo "Done, finished at $(date)"
+exit $SCRIPT_EXIT
