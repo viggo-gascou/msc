@@ -41,26 +41,27 @@ if t.TYPE_CHECKING:
 # Each dict overrides specific AUs on top of the source AU values; unspecified
 # AUs stay at their source values. "neutral" leaves the source AUs unchanged.
 AU_CONFIGS: dict[str, dict[str, float]] = {
-    "neutral": {},
+    # "neutral": {},
     "smile": {"AU06": 0.8, "AU12": 0.8},
     "surprise": {"AU01": 0.8, "AU02": 0.8, "AU05": 0.8, "AU26": 0.8},
-    "disgust": {"AU09": 0.8, "AU15": 0.8},
-    "fear": {
-        "AU01": 0.8,
-        "AU02": 0.8,
-        "AU04": 0.8,
-        "AU05": 0.8,
-        "AU07": 0.8,
-        "AU20": 0.8,
-        "AU26": 0.8,
-    },
+    # "disgust": {"AU09": 0.8, "AU15": 0.8},
+    # "fear": {
+    #     "AU01": 0.8,
+    #     "AU02": 0.8,
+    #     "AU04": 0.8,
+    #     "AU05": 0.8,
+    #     "AU07": 0.8,
+    #     "AU20": 0.8,
+    #     "AU26": 0.8,
+    # },
     "anger": {"AU04": 0.8, "AU05": 0.8, "AU07": 0.8, "AU23": 0.8},
     "sadness": {"AU01": 0.8, "AU04": 0.8, "AU15": 0.8},
-    "contempt": {"AU12": 0.8, "AU14": 0.8},
+    # "contempt": {"AU12": 0.8, "AU14": 0.8},
 }
 
 AU_SCALES: list[float] = [0.5, 0.75, 1.0, 1.5]
 GUIDANCE_SCALES: list[float] = [1.0, 3.0, 7.5, 10.0]
+STRENGTHS: list[float] = [0.3, 0.5, 0.7, 0.9]
 
 
 def main() -> None:
@@ -82,7 +83,6 @@ def main() -> None:
     )
     parser.add_argument("--num-samples", type=int, default=4)
     parser.add_argument("--num-steps", type=int, default=300)
-    parser.add_argument("--strength", type=float, default=0.3)
     parser.add_argument("--seed", type=int, default=RANDOM_SEED)
     parser.add_argument("--device", type=str, default="cuda")
     args = parser.parse_args()
@@ -103,28 +103,30 @@ def main() -> None:
     )
 
     if args.dataset in ("bp4d", "both"):
-        run_bp4d(
-            pipeline=pipeline,
-            output_dir=output_dir,
-            num_samples=args.num_samples,
-            strength=args.strength,
-            num_steps=args.num_steps,
-            seed=args.seed,
-            device=device,
-            dtype=dtype,
-        )
+        for strength in STRENGTHS:
+            run_bp4d(
+                pipeline=pipeline,
+                output_dir=output_dir / f"bp4d_{strength}",
+                num_samples=args.num_samples,
+                strength=strength,
+                num_steps=args.num_steps,
+                seed=args.seed,
+                device=device,
+                dtype=dtype,
+            )
 
     if args.dataset in ("ffhq", "both"):
-        run_ffhq(
-            pipeline=pipeline,
-            output_dir=output_dir,
-            num_samples=args.num_samples,
-            strength=args.strength,
-            num_steps=args.num_steps,
-            seed=args.seed,
-            device=device,
-            dtype=dtype,
-        )
+        for strength in STRENGTHS:
+            run_ffhq(
+                pipeline=pipeline,
+                output_dir=output_dir / f"ffhq_{strength}",
+                num_samples=args.num_samples,
+                strength=strength,
+                num_steps=args.num_steps,
+                seed=args.seed,
+                device=device,
+                dtype=dtype,
+            )
 
     logger.info(f"Done. Results in {output_dir.resolve()}")
 
