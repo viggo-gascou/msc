@@ -1,9 +1,10 @@
 """Create a subject panel figure showing diverse BP4D participants."""
 
+from pathlib import Path
+
 import h5py
 import numpy as np
 from PIL import Image
-from pathlib import Path
 
 from msc.constants import BP4D_PREPROCESSED_DIR
 
@@ -14,6 +15,7 @@ GAP = 4
 
 
 def main() -> None:
+    """Load one frame per subject from HDF5 and save a side-by-side panel."""
     OUT_PATH.parent.mkdir(parents=True, exist_ok=True)
 
     h5_path = BP4D_PREPROCESSED_DIR / f"{TASK}.h5"

@@ -14,6 +14,7 @@
 
 import argparse
 from pathlib import Path
+from typing import Any
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -24,7 +25,12 @@ from PIL import Image
 SNAPSHOT_EVERY = 50
 
 
-def decode_latents(pipe, latents):
+def decode_latents(pipe: StableDiffusionPipeline, latents: torch.Tensor) -> Image.Image:
+    """Decode a latent tensor to a PIL image without gradient tracking.
+
+    Returns:
+        Decoded PIL image.
+    """
     latents = latents / pipe.vae.config.scaling_factor
     with torch.no_grad():
         image = pipe.vae.decode(latents).sample
@@ -33,22 +39,42 @@ def decode_latents(pipe, latents):
     return pipe.numpy_to_pil(image)[0]
 
 
-def main():
+def main() -> None:
+    """Run text-to-image generation and save intermediate step snapshots."""
     parser = argparse.ArgumentParser()
-    parser.add_argument("--prompt", type=str, default="a photo of a mountain lake at sunset")
-    parser.add_argument("--negative-prompt", type=str, default="blurry, low quality, cartoon, painting, illustration, deformed, ugly")
+    parser.add_argument(
+        "--prompt", type=str, default="a photo of a mountain lake at sunset"
+    )
+    parser.add_argument(
+        "--negative-prompt",
+        type=str,
+        default="blurry, low quality, cartoon, painting, illustration, deformed, ugly",
+    )
     parser.add_argument("--steps", type=int, default=1000)
-    parser.add_argument("--model", type=str, default="SG161222/Realistic_Vision_V4.0_noVAE")
-    parser.add_argument("--out-dir", type=Path, default=Path("output_data/viz_stable_diffusion_details"))
+    parser.add_argument(
+        "--model", type=str, default="SG161222/Realistic_Vision_V4.0_noVAE"
+    )
+    parser.add_argument(
+        "--out-dir", type=Path, default=Path("output_data/viz_stable_diffusion_details")
+    )
     parser.add_argument("--seed", type=int, default=42)
     args = parser.parse_args()
 
     args.out_dir.mkdir(parents=True, exist_ok=True)
 
-    device = "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
+    device = (
+        "cuda"
+        if torch.cuda.is_available()
+        else "mps"
+        if torch.backends.mps.is_available()
+        else "cpu"
+    )
     dtype = torch.float16 if device == "cuda" else torch.float32
 
-    print(f"Device: {device}  |  Steps: {args.steps}  |  Snapshots every: {SNAPSHOT_EVERY}")
+    print(
+        f"Device: {device}  |  Steps: {args.steps}"
+        f"  |  Snapshots every: {SNAPSHOT_EVERY}"
+    )
     print(f"Prompt: {args.prompt}\n")
 
     pipe = StableDiffusionPipeline.from_pretrained(args.model, torch_dtype=dtype)
@@ -58,7 +84,12 @@ def main():
 
     snapshots = []
 
-    def on_step_end(pipe, step, timestep, callback_kwargs):
+    def on_step_end(
+        pipe: StableDiffusionPipeline,
+        step: int,
+        timestep: int,
+        callback_kwargs: dict[str, Any],
+    ) -> dict[str, Any]:
         if (step + 1) % SNAPSHOT_EVERY == 0 or step == 0:
             img = decode_latents(pipe, callback_kwargs["latents"])
             path = args.out_dir / f"step_{step + 1:04d}.png"

@@ -1,54 +1,86 @@
-from pathlib import Path
-import numpy as np
+"""Stitch denoising-step snapshots into a two-row strip figure."""
+
 import matplotlib.pyplot as plt
+import numpy as np
 from matplotlib.gridspec import GridSpec
 from PIL import Image
 
-base = Path(__file__).parents[2] / "output_data/viz_stable_diffusion_details"
-top_steps = [1, 200, 400]
-bot_steps = [600, 800, 1000]
+from msc.constants import PROJECT_ROOT
+from msc.plot_utils import set_plotting_style
 
-def load_strip(steps):
-    imgs = [Image.open(base / f"step_{s:04d}.png") for s in steps]
+BASE = PROJECT_ROOT / "output_data/viz_stable_diffusion_details"
+TOP_STEPS = [1, 200, 400]
+BOT_STEPS = [600, 800, 1000]
+MAX_SIZE = 512
+DPI = 300
+
+
+def stitch(
+    steps: list[int], fig: plt.Figure, ax: plt.Axes
+) -> tuple[np.ndarray, int, int]:
+    """Load, resize to axes pixel budget, and stitch images side by side.
+
+    Returns:
+        Tuple of (stitched image array, per-image width, per-image height).
+    """
+    fig_w, fig_h = fig.get_size_inches()
+    bbox = ax.get_position()
+    per_w = min(int(bbox.width * fig_w * DPI / len(steps)), MAX_SIZE)
+    per_h = min(int(bbox.height * fig_h * DPI), MAX_SIZE)
+
+    imgs = []
+    for s in steps:
+        img = Image.open(BASE / f"step_{s:04d}.png").convert("RGB")
+        img.thumbnail((per_w, per_h), Image.LANCZOS)
+        imgs.append(img)
+
     w, h = imgs[0].size
-    strip = Image.new("RGB", (w * len(imgs), h), "white")
+    canvas = Image.new("RGB", (w * len(imgs), h), "white")
     for i, img in enumerate(imgs):
-        strip.paste(img, (i * w, 0))
-    return np.array(strip), w, h
+        canvas.paste(img, (i * w, 0))
+    return np.array(canvas), w, h
 
-top_arr, w, h = load_strip(top_steps)
-bot_arr, _, _ = load_strip(bot_steps)
 
-cell = 3.0
-n = len(top_steps)
-fig = plt.figure(figsize=(n * cell, 2 * cell + 0.5), dpi=300)
-fig.patch.set_facecolor("white")
-gs = GridSpec(2, 1, figure=fig, hspace=-0.135)
+def label_axis(ax: plt.Axes, steps: list[int], w: int, top: bool) -> None:
+    """Configure tick labels and spine visibility for a strip axis."""
+    ax.set_yticks([])
+    ax.set_xticks([w * (i + 0.5) for i in range(len(steps))])
+    ax.set_xticklabels([str(s) for s in steps])
+    ax.tick_params(axis="x", length=0, pad=4)
+    if top:
+        ax.xaxis.set_label_position("top")
+        ax.xaxis.tick_top()
+    for spine in ax.spines.values():
+        spine.set_visible(False)
 
-# Top strip — labels on top
-ax_top = fig.add_subplot(gs[0])
-ax_top.imshow(top_arr)
-ax_top.set_yticks([])
-ax_top.set_xticks([w * (i + 0.5) for i in range(n)])
-ax_top.set_xticklabels([str(s) for s in top_steps], fontsize=15, color="#333333")
-ax_top.xaxis.set_label_position("top")
-ax_top.xaxis.tick_top()
-ax_top.tick_params(axis="x", length=0, pad=4)
-for spine in ax_top.spines.values():
-    spine.set_visible(False)
 
-# Bottom strip — labels on bottom
-ax_bot = fig.add_subplot(gs[1])
-ax_bot.imshow(bot_arr)
-ax_bot.set_yticks([])
-ax_bot.set_xticks([w * (i + 0.5) for i in range(n)])
-ax_bot.set_xticklabels([str(s) for s in bot_steps], fontsize=15, color="#333333")
-ax_bot.tick_params(axis="x", length=0, pad=4)
-for spine in ax_bot.spines.values():
-    spine.set_visible(False)
+def main() -> None:
+    """Build and save the two-row denoising strip figure."""
+    set_plotting_style()
 
-out = base / "strength-strip.pdf"
-out.parent.mkdir(parents=True, exist_ok=True)
-plt.savefig(out, bbox_inches="tight", facecolor="white")
-plt.close(fig)
-print(f"Saved → {out}")
+    n = len(TOP_STEPS)
+    cell = 3.0
+    fig = plt.figure(figsize=(n * cell, 2 * cell + 0.5))
+    fig.patch.set_facecolor("white")
+    gs = GridSpec(2, 1, figure=fig, hspace=-0.135)
+
+    ax_top = fig.add_subplot(gs[0])
+    ax_bot = fig.add_subplot(gs[1])
+
+    top_arr, w_top, _ = stitch(TOP_STEPS, fig, ax_top)
+    bot_arr, w_bot, _ = stitch(BOT_STEPS, fig, ax_bot)
+
+    ax_top.imshow(top_arr)
+    label_axis(ax_top, TOP_STEPS, w_top, top=True)
+
+    ax_bot.imshow(bot_arr)
+    label_axis(ax_bot, BOT_STEPS, w_bot, top=False)
+
+    out = BASE / "strength-strip.pdf"
+    plt.savefig(out, facecolor="white")
+    plt.close(fig)
+    print(f"Saved → {out}")
+
+
+if __name__ == "__main__":
+    main()
