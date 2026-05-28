@@ -11,14 +11,16 @@
 #   "loguru",
 # ]
 # ///
-"""Run py-feat AU detection on age-filtered FFHQ images.
+r"""Run py-feat AU detection on age-filtered FFHQ images.
 
 Run with:
-    .venv-pyfeat/bin/python src/scripts/pyfeat_ffhq.py --index data/FFHQ/ffhq_index.parquet
+    .venv-pyfeat/bin/python src/scripts/pyfeat_ffhq.py \
+        --index data/FFHQ/ffhq_index.parquet
 """
 
 import argparse
 import time
+import typing as t
 import warnings
 from pathlib import Path
 
@@ -40,13 +42,22 @@ _to_tensor = transforms.ToTensor()
 
 
 class ImagePathDataset(Dataset):
+    """Torch Dataset wrapping a list of image paths."""
+
     def __init__(self, paths: list[Path]) -> None:
+        """Initialise with a list of image paths."""
         self.paths = paths
 
     def __len__(self) -> int:
+        """Return the number of images."""
         return len(self.paths)
 
-    def __getitem__(self, idx: int) -> dict:
+    def __getitem__(self, idx: int) -> dict[str, t.Any]:
+        """Load and return a single image as a uint8 tensor with metadata.
+
+        Returns:
+            Dict with Image tensor and path/frame metadata fields.
+        """
         path = self.paths[idx]
         img = Image.open(path).convert("RGB")
         tensor = (_to_tensor(img) * 255).byte()  # (C, H, W) uint8
@@ -59,7 +70,12 @@ class ImagePathDataset(Dataset):
         }
 
 
-def collate_fn(batch: list[dict]) -> dict:
+def collate_fn(batch: list[dict[str, t.Any]]) -> dict[str, t.Any]:
+    """Collate a list of sample dicts into a batched dict.
+
+    Returns:
+        Batched dict with a stacked Image tensor and lists for all metadata fields.
+    """
     return {
         "Image": torch.stack([b["Image"] for b in batch]),
         "FileName": [b["FileName"] for b in batch],
@@ -70,6 +86,7 @@ def collate_fn(batch: list[dict]) -> dict:
 
 
 def main() -> None:
+    """Parse arguments and delegate to run()."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--images-dir", type=Path, default=DEFAULT_IMAGES_DIR)
     parser.add_argument("--index", type=Path, default=DEFAULT_INDEX_PATH)
@@ -102,6 +119,26 @@ def run(
     shard_idx: int = 0,
     num_shards: int = 1,
 ) -> None:
+    """Run py-feat AU detection on FFHQ and write results to parquet.
+
+    Args:
+        images_dir:
+            Directory containing FFHQ images.
+        index_path:
+            Path to the FFHQ index parquet with an image_number column.
+        output_path:
+            Path to write the output parquet file.
+        batch_size:
+            Number of images per detection batch.
+        num_workers:
+            DataLoader worker processes.
+        face_threshold:
+            Minimum detection confidence to accept a face.
+        shard_idx (optional):
+            Zero-based shard index for parallel runs. Defaults to 0.
+        num_shards (optional):
+            Total number of shards. Defaults to 1.
+    """
     device = "cuda" if torch.cuda.is_available() else "cpu"
     logger.info(f"Device: {device}")
 
@@ -149,9 +186,7 @@ def run(
 
     for batch in tqdm(loader, desc="pyfeat-ffhq", unit="batch"):
         faces_data = detector.detect_faces(
-            batch["Image"],
-            face_size=112,
-            face_detection_threshold=face_threshold,
+            batch["Image"], face_size=112, face_detection_threshold=face_threshold
         )
         batch_results = detector.forward(faces_data)
 
@@ -162,7 +197,6 @@ def run(
             file_names.append(np.repeat(batch["FileName"][i], n_faces))
         batch_results["input"] = np.concatenate(file_names)
         batch_results["frame"] = np.concatenate(frame_ids)
-
         batch_results["Identity"] = 0
 
         # Keep largest face per frame, skip frames with no detection
@@ -171,11 +205,10 @@ def run(
             if frame_results.isna().any().any():
                 n_no_face += 1
                 continue
-            largest_idx = (
-                frame_results.assign(
-                    face_area=frame_results["FaceRectWidth"] * frame_results["FaceRectHeight"]
-                )["face_area"].idxmax()
-            )
+            largest_idx = frame_results.assign(
+                face_area=frame_results["FaceRectWidth"]
+                * frame_results["FaceRectHeight"]
+            )["face_area"].idxmax()
             row = frame_results.loc[[largest_idx]]
             au_df = row.aus.copy()
             au_df.insert(0, "image", batch["FileName"][frame_idx - frame_counter])
@@ -188,8 +221,8 @@ def run(
 
     elapsed = time.perf_counter() - t0
     logger.info(
-        f"Done: {elapsed:.1f}s ({elapsed / n * 1000:.0f}ms/img) -> {len(combined)} rows, "
-        f"{n_no_face} images skipped (no face)"
+        f"Done: {elapsed:.1f}s ({elapsed / n * 1000:.0f}ms/img)"
+        f" -> {len(combined)} rows, {n_no_face} images skipped (no face)"
     )
 
 
