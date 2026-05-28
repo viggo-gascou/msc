@@ -21,6 +21,7 @@ Output layout::
 """
 
 import argparse
+import json
 import typing as t
 from pathlib import Path
 
@@ -97,6 +98,9 @@ def main() -> None:
 
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
+    (output_dir / "args.json").write_text(
+        json.dumps(vars(args), indent=2), encoding="utf-8"
+    )
 
     if args.dataset in ("bp4d", "both"):
         run_bp4d(
