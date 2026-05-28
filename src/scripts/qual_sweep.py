@@ -42,20 +42,20 @@ if t.TYPE_CHECKING:
 AU_CONFIGS: dict[str, dict[str, float]] = {
     "neutral": {},
     "smile": {"AU06": 0.8, "AU12": 0.8},
-    "surprise": {"AU01": 0.7, "AU02": 0.7, "AU05": 0.8, "AU26": 0.6},
-    "disgust": {"AU09": 0.8, "AU15": 0.6},
+    "surprise": {"AU01": 0.8, "AU02": 0.8, "AU05": 0.8, "AU26": 0.8},
+    "disgust": {"AU09": 0.8, "AU15": 0.8},
     "fear": {
-        "AU01": 0.7,
-        "AU02": 0.5,
-        "AU04": 0.6,
+        "AU01": 0.8,
+        "AU02": 0.8,
+        "AU04": 0.8,
         "AU05": 0.8,
-        "AU07": 0.6,
-        "AU20": 0.7,
-        "AU26": 0.5,
+        "AU07": 0.8,
+        "AU20": 0.8,
+        "AU26": 0.8,
     },
-    "anger": {"AU04": 0.8, "AU05": 0.5, "AU07": 0.7, "AU23": 0.6},
-    "sadness": {"AU01": 0.7, "AU04": 0.6, "AU15": 0.7},
-    "contempt": {"AU12": 0.6, "AU14": 0.7},
+    "anger": {"AU04": 0.8, "AU05": 0.8, "AU07": 0.8, "AU23": 0.8},
+    "sadness": {"AU01": 0.8, "AU04": 0.8, "AU15": 0.8},
+    "contempt": {"AU12": 0.8, "AU14": 0.8},
 }
 
 AU_SCALES: list[float] = [0.5, 0.75, 1.0, 1.5]
