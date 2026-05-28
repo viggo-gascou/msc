@@ -129,9 +129,7 @@ class BP4DDataset(VisionDataset):
             index = index[index["subject"].isin(subjects)]
 
         self.index = index.reset_index(drop=True)
-        self._lf_aus: dict[str, dict[tuple[str, int], np.ndarray]] = (
-            load_pyfeat_aus()
-        )
+        self._lf_aus: dict[str, dict[tuple[str, int], np.ndarray]] = load_pyfeat_aus()
         valid = {
             (task, subj, frame)
             for task, task_dict in self._lf_aus.items()

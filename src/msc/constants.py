@@ -84,9 +84,26 @@ LIBREFACE_FFHQ_PATH = FFHQ_DATA_DIR / "ffhq_libreface.parquet"
 PYFEAT_FFHQ_PATH = FFHQ_DATA_DIR / "ffhq_pyfeat.parquet"
 
 PYFEAT_AU_COLUMNS: list[str] = [
-    "AU01", "AU02", "AU04", "AU05", "AU06", "AU07", "AU09", "AU10",
-    "AU11", "AU12", "AU14", "AU15", "AU17", "AU20", "AU23", "AU24",
-    "AU25", "AU26", "AU28", "AU43",
+    "AU01",
+    "AU02",
+    "AU04",
+    "AU05",
+    "AU06",
+    "AU07",
+    "AU09",
+    "AU10",
+    "AU11",
+    "AU12",
+    "AU14",
+    "AU15",
+    "AU17",
+    "AU20",
+    "AU23",
+    "AU24",
+    "AU25",
+    "AU26",
+    "AU28",
+    "AU43",
 ]
 PYFEAT_AU_SCALE: list[float] = [1.0] * len(PYFEAT_AU_COLUMNS)
 PYFEAT_AU_NAME_TO_IDX: dict[str, int] = {
