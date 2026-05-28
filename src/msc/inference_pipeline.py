@@ -14,11 +14,7 @@ from diffusers.pipelines.stable_diffusion.pipeline_stable_diffusion_img2img impo
 from PIL import Image
 
 from .au_adapter import AUEncoder, IdentityAdapter
-from .constants import (
-    PYFEAT_AU_COLUMNS,
-    PYFEAT_AU_NAME_TO_IDX,
-    PYFEAT_AU_SCALE,
-)
+from .constants import PYFEAT_AU_COLUMNS, PYFEAT_AU_NAME_TO_IDX, PYFEAT_AU_SCALE
 from .face_embeddings.arcface import ArcFaceEmbedding
 from .torch_utils import tensor_to_bgr
 
@@ -77,9 +73,10 @@ class AUAdapterPipeline(StableDiffusionImg2ImgPipeline):
     ) -> torch.Tensor:
         """Encode AU values for classifier-free guidance.
 
-        Encodes both unconditional (zero AUs) and conditional AU tokens, then
-        personalises the conditional half with the subject's identity via
-        ``IdentityAdapter``.
+        Encodes both unconditional (zero AUs, zero identity) and conditional AU
+        tokens, then personalises both halves with ``IdentityAdapter`` — the
+        unconditional half receives a zero ArcFace embedding to match the CFG
+        dropout behaviour seen during training.
 
         Args:
             aus:
@@ -105,6 +102,7 @@ class AUAdapterPipeline(StableDiffusionImg2ImgPipeline):
         arcface_embeds = arcface_embeds.to(dtype=dtype)
         au_tokens = self.au_encoder.encode(aus)
         uncond_au, cond_au = au_tokens.chunk(2, dim=0)
+        uncond_au = self.identity_adapter(uncond_au, torch.zeros_like(arcface_embeds))
         cond_au = self.identity_adapter(cond_au, arcface_embeds)
         return torch.cat([uncond_au, cond_au], dim=0)
 
