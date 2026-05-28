@@ -97,6 +97,7 @@ exclude = [
     ".git",
     ".ruff_cache",
     ".venv",
+    "notebooks",
 ]
 extend-include = [
     "*.ipynb",

@@ -67,17 +67,11 @@ def main() -> None:
         description="Precompute VAE latent encodings for all BP4D frames."
     )
     parser.add_argument(
-        "--unet-model",
-        type=str,
-        default="SG161222/Realistic_Vision_V4.0_noVAE",
+        "--unet-model", type=str, default="Manojb/stable-diffusion-2-1-base"
     )
     parser.add_argument("--vae-model", type=str, default=None)
     parser.add_argument("--device", type=str, default="cuda")
-    parser.add_argument(
-        "--output-path",
-        type=str,
-        default=str(BP4D_VAE_LATENTS_PATH),
-    )
+    parser.add_argument("--output-path", type=str, default=str(BP4D_VAE_LATENTS_PATH))
     args = parser.parse_args()
 
     device = torch.device(args.device)
@@ -133,10 +127,7 @@ def main() -> None:
                 continue
 
             path = resolve_frame_path(
-                root=BP4D_SEQUENCES_DIR,
-                subject=subject,
-                task=task,
-                img_frame=frame - 1,
+                root=BP4D_SEQUENCES_DIR, subject=subject, task=task, img_frame=frame - 1
             )
             if path is None:
                 missing += 1
