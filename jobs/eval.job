@@ -24,7 +24,6 @@ export NO_ALBUMENTATIONS_UPDATE=1
 #   sbatch --export=ALL,MODEL_NAME=sd21_pyfeat_finetune jobs/eval.job
 MODEL_NAME="${MODEL_NAME:-sd21_pyfeat_pretrain}"
 MODEL_DIR="models/${MODEL_NAME}"
-OUTPUT_DIR="eval/${MODEL_NAME}_bp4d"
 # Derive detector from second field of model name (sd21_pyfeat_pretrain -> pyfeat)
 DETECTOR=$(echo "${MODEL_NAME}" | cut -d_ -f2)
 DETECT_VENV=".venv-${DETECTOR}"
@@ -36,36 +35,41 @@ NUM_SHARDS="${NUM_SHARDS:-1}"
 echo "Running on $(hostname) (shard ${SHARD_IDX}/${NUM_SHARDS}):"
 nvidia-smi --query-gpu=index,gpu_name,memory.total --format=csv,noheader,nounits | awk -F',' '{printf "  GPU %s: %s (%s MiB)\n", $1, $2, $3}'
 
-# Phase 1: generate images
-echo "Phase 1: generating images at $(date)"
-.venv/bin/python src/scripts/eval_quantitative.py \
-    --model-dir "${MODEL_DIR}" \
-    --dataset bp4d \
-    --output-dir "${OUTPUT_DIR}" \
-    --num-samples 500 \
-    --num-steps 300 \
-    --strength 0.5 \
-    --au-scale 1.0 \
-    --guidance-scale 3.0 \
-    --shard-idx "${SHARD_IDX}" \
-    --num-shards "${NUM_SHARDS}"
-SCRIPT_EXIT=$?
-if [ $SCRIPT_EXIT -ne 0 ]; then
-    echo "Phase 1 failed, exiting"
-    exit $SCRIPT_EXIT
-fi
+for AU_BASELINE in zero source; do
+    OUTPUT_DIR="eval/${MODEL_NAME}_bp4d_${AU_BASELINE}"
 
-# Phases 2 and 3 only run on shard 0, after all shards have finished
-if [ "${NUM_SHARDS}" -gt 1 ] && [ "${SHARD_IDX}" -ne 0 ]; then
-    echo "Shard ${SHARD_IDX} done. Run detection and metrics once all shards complete."
-    exit 0
-fi
+    # Phase 1: generate images
+    echo "=== Baseline: ${AU_BASELINE} ==="
+    echo "Phase 1: generating images at $(date)"
+    .venv/bin/python src/scripts/eval_quantitative.py \
+        --model-dir "${MODEL_DIR}" \
+        --dataset bp4d \
+        --output-dir "${OUTPUT_DIR}" \
+        --num-samples 500 \
+        --num-steps 300 \
+        --strength 0.5 \
+        --au-scale 1.0 \
+        --guidance-scale 3.0 \
+        --au-baseline "${AU_BASELINE}" \
+        --shard-idx "${SHARD_IDX}" \
+        --num-shards "${NUM_SHARDS}"
+    SCRIPT_EXIT=$?
+    if [ $SCRIPT_EXIT -ne 0 ]; then
+        echo "Phase 1 (${AU_BASELINE}) failed, exiting"
+        exit $SCRIPT_EXIT
+    fi
 
-# If sharded, merge metadata parquets first
-if [ "${NUM_SHARDS}" -gt 1 ]; then
-    echo "Merging shard metadata at $(date)"
-    OUTPUT_DIR_MERGE="${OUTPUT_DIR}" NUM_SHARDS_MERGE="${NUM_SHARDS}" \
-        .venv/bin/python - <<'EOF'
+    # Phases 2 and 3 only run on shard 0, after all shards have finished
+    if [ "${NUM_SHARDS}" -gt 1 ] && [ "${SHARD_IDX}" -ne 0 ]; then
+        echo "Shard ${SHARD_IDX} done for ${AU_BASELINE}. Run detection and metrics once all shards complete."
+        continue
+    fi
+
+    # If sharded, merge metadata parquets first
+    if [ "${NUM_SHARDS}" -gt 1 ]; then
+        echo "Merging shard metadata at $(date)"
+        OUTPUT_DIR_MERGE="${OUTPUT_DIR}" NUM_SHARDS_MERGE="${NUM_SHARDS}" \
+            .venv/bin/python - <<'EOF'
 import os, pandas as pd
 from pathlib import Path
 output_dir = Path(os.environ["OUTPUT_DIR_MERGE"])
@@ -74,27 +78,33 @@ shards = [pd.read_parquet(output_dir / f"metadata_shard{i}.parquet") for i in ra
 pd.concat(shards, ignore_index=True).to_parquet(output_dir / "metadata.parquet", index=False)
 print(f"Merged {num_shards} shards -> metadata.parquet")
 EOF
-fi
+    fi
 
-# Phase 2: detect AUs
-echo "Phase 2: detecting AUs at $(date)"
-"${DETECT_VENV}/bin/python" src/scripts/detect_generated_aus.py \
-    --images-dir "${OUTPUT_DIR}/generated" \
-    --detector "${DETECTOR}" \
-    --output "${OUTPUT_DIR}/au_detections.parquet"
-SCRIPT_EXIT=$?
-if [ $SCRIPT_EXIT -ne 0 ]; then
-    echo "Phase 2 failed, exiting"
-    exit $SCRIPT_EXIT
-fi
+    # Phase 2: detect AUs
+    echo "Phase 2: detecting AUs at $(date)"
+    "${DETECT_VENV}/bin/python" src/scripts/detect_generated_aus.py \
+        --images-dir "${OUTPUT_DIR}/generated" \
+        --detector "${DETECTOR}" \
+        --output "${OUTPUT_DIR}/au_detections.parquet"
+    SCRIPT_EXIT=$?
+    if [ $SCRIPT_EXIT -ne 0 ]; then
+        echo "Phase 2 (${AU_BASELINE}) failed, exiting"
+        exit $SCRIPT_EXIT
+    fi
 
-# Phase 3: compute AU metrics
-echo "Phase 3: computing AU metrics at $(date)"
-.venv/bin/python src/scripts/eval_quantitative.py \
-    --output-dir "${OUTPUT_DIR}" \
-    --au-detections "${OUTPUT_DIR}/au_detections.parquet" \
-    --metrics-only
-SCRIPT_EXIT=$?
+    # Phase 3: compute AU metrics
+    echo "Phase 3: computing AU metrics at $(date)"
+    .venv/bin/python src/scripts/eval_quantitative.py \
+        --output-dir "${OUTPUT_DIR}" \
+        --au-detections "${OUTPUT_DIR}/au_detections.parquet" \
+        --metrics-only
+    SCRIPT_EXIT=$?
+    if [ $SCRIPT_EXIT -ne 0 ]; then
+        echo "Phase 3 (${AU_BASELINE}) failed, exiting"
+        exit $SCRIPT_EXIT
+    fi
+
+done
 
 echo "Done, finished at $(date)"
-exit $SCRIPT_EXIT
+exit 0

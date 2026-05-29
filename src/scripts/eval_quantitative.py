@@ -42,7 +42,6 @@ from tqdm import tqdm
 from msc.constants import (
     BP4D_TEST_INDEX_PATH,
     LIBREFACE_AU_NAME_TO_IDX,
-    PYFEAT_AU_COLUMNS,
     PYFEAT_AU_NAME_TO_IDX,
     RANDOM_SEED,
 )
@@ -92,6 +91,16 @@ def main() -> None:
     parser.add_argument("--device", type=str, default="cuda")
     parser.add_argument("--shard-idx", type=int, default=0)
     parser.add_argument("--num-shards", type=int, default=1)
+    parser.add_argument(
+        "--au-baseline",
+        type=str,
+        default="source",
+        choices=["zero", "source"],
+        help=(
+            "How to set unspecified AUs: 'source' uses the source image AUs as base "
+            "(default), 'zero' sets all unspecified AUs to 0."
+        ),
+    )
     parser.add_argument(
         "--au-detections",
         type=str,
@@ -146,6 +155,7 @@ def main() -> None:
         num_shards=args.num_shards,
         device=device,
         dtype=dtype,
+        au_baseline=args.au_baseline,
     )
     shard_suffix = f"_shard{args.shard_idx}" if args.num_shards > 1 else ""
     metadata_path = output_dir / f"metadata{shard_suffix}.parquet"
@@ -200,6 +210,7 @@ def _run_eval(
     num_shards: int,
     device: torch.device,
     dtype: torch.dtype,
+    au_baseline: str = "source",
 ) -> pd.DataFrame:
     """Generate images and compute ArcFace + latent metrics for all samples.
 
@@ -232,6 +243,9 @@ def _run_eval(
             Target device.
         dtype:
             Model dtype.
+        au_baseline (optional):
+            How to set unspecified AUs: 'source' uses source image AUs as base,
+            'zero' sets all unspecified AUs to 0. Defaults to 'source'.
 
     Returns:
         DataFrame with one row per (source image, AU config) pair.
@@ -250,11 +264,6 @@ def _run_eval(
     au_name_to_idx = (
         LIBREFACE_AU_NAME_TO_IDX if detector == "libreface" else PYFEAT_AU_NAME_TO_IDX
     )
-    au_config_tensors = _build_au_config_tensors(
-        configs=AU_CONFIGS,
-        num_aus=pipeline.au_encoder.num_aus,
-        au_name_to_idx=au_name_to_idx,
-    )
 
     all_indices = torch.randperm(
         len(ds), generator=torch.Generator().manual_seed(seed)
@@ -266,7 +275,16 @@ def _run_eval(
     rows: list[dict[str, t.Any]] = []
     for i, idx in tqdm(source_indices, desc="Evaluating", unit="source"):
         sample = ds[idx]
-        for config_name, aus_tensor in au_config_tensors.items():
+        for config_name, overrides in AU_CONFIGS.items():
+            if au_baseline == "zero":
+                aus_tensor = torch.zeros(
+                    pipeline.au_encoder.num_aus, dtype=torch.float32
+                )
+            else:
+                aus_tensor = sample["aus"].nan_to_num(0.0).clone()
+            for au_name, intensity in overrides.items():
+                if au_name in au_name_to_idx:
+                    aus_tensor[au_name_to_idx[au_name]] = intensity
             row = _evaluate_sample(
                 pipeline=pipeline,
                 sample=sample,
@@ -410,14 +428,15 @@ def _print_au_metrics(metadata: pd.DataFrame, detections: pd.DataFrame) -> None:
         src_det_mae = float(np.nanmean(np.abs(detected[:, :n_det] - source[:, :n_det])))
         src_det_mse = float(np.nanmean((detected[:, :n_det] - source[:, :n_det]) ** 2))
 
+        tgt_mean = target_vals.mean()
         logger.info(f"  [{config_name}]  n={len(group)}")
-        logger.info(f"    MSE  active AUs (target={target_vals.mean():.2f}):  {au_mse:.4f}")
-        logger.info(f"    MAE  active AUs:                                    {au_mae:.4f}")
-        logger.info(f"    Wasserstein det->req (active):                      {w_det_req:.4f}")
-        logger.info(f"    MSE  inactive AUs (target=0):                       {inactive_mse:.4f}")
-        logger.info(f"    MAE  inactive AUs:                                  {inactive_mae:.4f}")
-        logger.info(f"    MAE  src->det (all AUs, overall change):            {src_det_mae:.4f}")
-        logger.info(f"    MSE  src->det (all AUs):                            {src_det_mse:.4f}")
+        logger.info(f"    MSE  active AUs (target={tgt_mean:.2f}): {au_mse:.4f}")
+        logger.info(f"    MAE  active AUs:                         {au_mae:.4f}")
+        logger.info(f"    Wasserstein det->req (active):           {w_det_req:.4f}")
+        logger.info(f"    MSE  inactive AUs (target=0):            {inactive_mse:.4f}")
+        logger.info(f"    MAE  inactive AUs:                       {inactive_mae:.4f}")
+        logger.info(f"    MAE  src->det (all AUs):                 {src_det_mae:.4f}")
+        logger.info(f"    MSE  src->det (all AUs):                 {src_det_mse:.4f}")
 
 
 def _print_non_au_summary(metadata: pd.DataFrame) -> None:
@@ -440,34 +459,6 @@ def _print_non_au_summary(metadata: pd.DataFrame) -> None:
             f"Latent d(src, pred):  mean={d_src_pred.mean():.4f}  "
             f"median={d_src_pred.median():.4f}"
         )
-
-
-def _build_au_config_tensors(
-    configs: dict[str, dict[str, float]],
-    num_aus: int,
-    au_name_to_idx: dict[str, int],
-) -> dict[str, torch.Tensor]:
-    """Convert AU config dicts to fixed-size tensors.
-
-    Args:
-        configs:
-            Dict mapping config name to {AU name: intensity} overrides.
-        num_aus:
-            Size of the AU vector expected by the model.
-        au_name_to_idx:
-            Mapping from AU name (e.g. 'AU12') to index in the AU vector.
-
-    Returns:
-        Dict mapping config name to a float32 tensor of shape (num_aus,).
-    """
-    result: dict[str, torch.Tensor] = {}
-    for name, overrides in configs.items():
-        vec = torch.zeros(num_aus, dtype=torch.float32)
-        for au_name, intensity in overrides.items():
-            if au_name in au_name_to_idx:
-                vec[au_name_to_idx[au_name]] = intensity
-        result[name] = vec
-    return result
 
 
 def _encode_latent(
