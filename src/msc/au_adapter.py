@@ -458,7 +458,8 @@ def load_au_adapter(
     au_sd = _strip(flat, "au_encoder")
     au_dim = au_sd["norm.weight"].shape[0]
     au_num_tokens = au_sd["to_tokens.weight"].shape[0] // au_dim
-    au_encoder = AUEncoder(num_tokens=au_num_tokens, dim=au_dim)
+    au_num_aus = au_sd["mlp.0.weight"].shape[1]
+    au_encoder = AUEncoder(num_tokens=au_num_tokens, dim=au_dim, num_aus=au_num_aus)
     au_encoder.load_state_dict(au_sd)
 
     id_sd = _strip(flat, "identity_adapter")
