@@ -117,7 +117,6 @@ def _detect_pyfeat(image_paths: list[Path]) -> list[dict[str, t.Any]]:
         au_model="xgb",
         identity_model=None,
         emotion_model=None,
-        facepose_model=None,
     )
 
     rows: list[dict[str, t.Any]] = []
