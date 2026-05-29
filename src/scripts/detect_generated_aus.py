@@ -28,9 +28,26 @@ from loguru import logger
 
 # py-feat AU columns (20 AUs in order)
 _PYFEAT_AU_COLUMNS: list[str] = [
-    "AU01", "AU02", "AU04", "AU05", "AU06", "AU07", "AU09", "AU10",
-    "AU11", "AU12", "AU14", "AU15", "AU17", "AU20", "AU23", "AU24",
-    "AU25", "AU26", "AU28", "AU43",
+    "AU01",
+    "AU02",
+    "AU04",
+    "AU05",
+    "AU06",
+    "AU07",
+    "AU09",
+    "AU10",
+    "AU11",
+    "AU12",
+    "AU14",
+    "AU15",
+    "AU17",
+    "AU20",
+    "AU23",
+    "AU24",
+    "AU25",
+    "AU26",
+    "AU28",
+    "AU43",
 ]
 
 # LibreFace AU columns (17 AUs, intensity/occurrence columns)
@@ -141,7 +158,7 @@ def _detect_pyfeat(image_paths: list[Path]) -> list[dict[str, t.Any]]:
             img = Image.open(path).convert("RGB")
             tensor = (to_tensor(img) * 255).byte().unsqueeze(0)  # (1, C, H, W) uint8
             faces_data = detector.detect_faces(
-                tensor, face_size=112, face_detection_threshold=0.9
+                tensor, face_size=112, face_detection_threshold=0.6
             )
             result = detector.forward(faces_data)
             result["frame"] = [0]
@@ -154,7 +171,9 @@ def _detect_pyfeat(image_paths: list[Path]) -> list[dict[str, t.Any]]:
             au_row = frame_result.loc[[largest_idx]].aus.iloc[0]
             for au in _PYFEAT_AU_COLUMNS:
                 col = au.upper()
-                row[f"detected_{au}"] = float(au_row[col]) if col in au_row else float("nan")
+                row[f"detected_{au}"] = (
+                    float(au_row[col]) if col in au_row else float("nan")
+                )
         except Exception as e:
             logger.warning(f"{path.name}: {e}")
             for au in _PYFEAT_AU_COLUMNS:
