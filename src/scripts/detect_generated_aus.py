@@ -24,6 +24,7 @@ import typing as t
 from pathlib import Path
 
 import pandas as pd
+from loguru import logger
 
 # py-feat AU columns (20 AUs in order)
 _PYFEAT_AU_COLUMNS: list[str] = [
@@ -81,7 +82,7 @@ def main() -> None:
     if len(image_paths) == 0:
         raise FileNotFoundError(f"No sample_*.png files found in {images_dir}")
 
-    print(f"Detecting AUs on {len(image_paths)} images with {args.detector}...")
+    logger.info(f"Detecting AUs on {len(image_paths)} images with {args.detector}...")
 
     if args.detector == "pyfeat":
         rows = _detect_pyfeat(image_paths=image_paths)
@@ -90,14 +91,13 @@ def main() -> None:
 
     detections = pd.DataFrame(rows)
     detections.to_parquet(args.output, index=False)
-    print(f"Saved {len(detections)} rows to {args.output}")
+    logger.info(f"Saved {len(detections)} rows to {args.output}")
 
     au_cols = [c for c in detections.columns if c.startswith("detected_")]
     missing = detections[au_cols].isna().all(axis=1).sum()
     if missing > 0:
-        print(
-            f"Warning: {missing}/{len(detections)} images had no face detected"
-            " (NaN AUs)."
+        logger.warning(
+            f"{missing}/{len(detections)} images had no face detected (NaN AUs)."
         )
 
 
@@ -111,12 +111,25 @@ def _detect_pyfeat(image_paths: list[Path]) -> list[dict[str, t.Any]]:
     Returns:
         List of dicts with sample_id and detected AU columns.
     """
-    from feat import Detector  # type: ignore[import]
+    import warnings
 
+    import torch
+    from feat import Detector  # type: ignore[import]
+    from PIL import Image
+    from torchvision import transforms  # type: ignore[import]
+
+    to_tensor = transforms.ToTensor()
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+
+    warnings.filterwarnings(
+        "ignore", message=".*serialized model", category=UserWarning, module=".*skops"
+    )
     detector = Detector(
+        landmark_model="mobilefacenet",
         au_model="xgb",
-        identity_model=None,
         emotion_model=None,
+        identity_model=None,
+        device=device,
     )
 
     rows: list[dict[str, t.Any]] = []
@@ -125,21 +138,25 @@ def _detect_pyfeat(image_paths: list[Path]) -> list[dict[str, t.Any]]:
         row: dict[str, t.Any] = {"sample_id": sample_id}
 
         try:
-            result = detector.detect_image(str(path))
-        except Exception as e:
-            print(f"  Warning: {path.name}: {e}")
-            result = None
-
-        if result is not None and len(result) > 0:
-            au_row = result.aus.iloc[0]
+            img = Image.open(path).convert("RGB")
+            tensor = (to_tensor(img) * 255).byte().unsqueeze(0)  # (1, C, H, W) uint8
+            faces_data = detector.detect_faces(
+                tensor, face_size=112, face_detection_threshold=0.9
+            )
+            result = detector.forward(faces_data)
+            result["frame"] = [0]
+            frame_result = result[result["frame"] == 0]
+            if frame_result.isna().any().any() or len(frame_result) == 0:
+                raise ValueError("no face detected")
+            largest_idx = frame_result.assign(
+                face_area=frame_result["FaceRectWidth"] * frame_result["FaceRectHeight"]
+            )["face_area"].idxmax()
+            au_row = frame_result.loc[[largest_idx]].aus.iloc[0]
             for au in _PYFEAT_AU_COLUMNS:
                 col = au.upper()
-                row[f"detected_{au}"] = (
-                    float(au_row[col]) if col in au_row else float("nan")
-                )
-        else:
-            if result is not None:
-                print(f"  Warning: {path.name}: no face detected")
+                row[f"detected_{au}"] = float(au_row[col]) if col in au_row else float("nan")
+        except Exception as e:
+            logger.warning(f"{path.name}: {e}")
             for au in _PYFEAT_AU_COLUMNS:
                 row[f"detected_{au}"] = float("nan")
 
@@ -175,7 +192,7 @@ def _detect_libreface(image_paths: list[Path]) -> list[dict[str, t.Any]]:
                 if f"detected_{au}" not in row:
                     row[f"detected_{au}"] = float("nan")
         except Exception as e:
-            print(f"  Warning: {path.name}: {e}")
+            logger.warning(f"{path.name}: {e}")
             for au in _PYFEAT_AU_COLUMNS:
                 row[f"detected_{au}"] = float("nan")
         rows.append(row)
