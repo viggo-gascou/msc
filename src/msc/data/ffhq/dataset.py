@@ -15,6 +15,8 @@ from ...constants import (
     FFHQ_CAPTIONS_PATH,
     FFHQ_EMBEDDINGS_PATH,
     FFHQ_IMAGES_DIR,
+    LIBREFACE_AU_COLUMNS,
+    LIBREFACE_AU_SCALE,
     PYFEAT_AU_COLUMNS,
     PYFEAT_AU_SCALE,
 )
@@ -57,6 +59,7 @@ class FFHQDataset(Dataset):
         transform: c.Callable | None = None,
         df: pd.DataFrame | None = None,
         captions_path: Path | None = None,
+        detector: t.Literal["pyfeat", "libreface"] = "pyfeat",
     ) -> None:
         """Initialise the FFHQ dataset for a given split.
 
@@ -71,10 +74,20 @@ class FFHQDataset(Dataset):
             captions_path (optional):
               Path to the captions parquet. Defaults to FFHQ_CAPTIONS_PATH.
               If the file does not exist, captions will be empty strings.
+            detector (optional):
+              Which AU detector annotations to load ('pyfeat' or 'libreface').
+              Defaults to 'pyfeat'.
         """
         super().__init__()
         self.transform = transform
-        full_df = df if df is not None else load_ffhq_df()
+        self.detector = detector
+        if detector == "libreface":
+            self.au_columns = LIBREFACE_AU_COLUMNS
+            self.au_scale = LIBREFACE_AU_SCALE
+        else:
+            self.au_columns = PYFEAT_AU_COLUMNS
+            self.au_scale = PYFEAT_AU_SCALE
+        full_df = df if df is not None else load_ffhq_df(detector=detector)
         self.df = full_df[full_df["split"] == split].reset_index(drop=True)
         self.h5: h5py.File | None = None
 
@@ -129,8 +142,8 @@ class FFHQDataset(Dataset):
         arcface = torch.from_numpy(self.open_h5()[stem][:].copy())
 
         aus = torch.tensor(
-            [float(row[col]) for col in PYFEAT_AU_COLUMNS], dtype=torch.float32
-        ) * torch.tensor(PYFEAT_AU_SCALE)
+            [float(row[col]) for col in self.au_columns], dtype=torch.float32
+        ) * torch.tensor(self.au_scale)
 
         caption: str = str(row["caption"])
 

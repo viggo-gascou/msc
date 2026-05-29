@@ -151,19 +151,20 @@ def _detect_pyfeat(image_paths: list[Path]) -> list[dict[str, t.Any]]:
 
     rows: list[dict[str, t.Any]] = []
     for path in image_paths:
-        sample_id = _parse_sample_id(path)
-        row: dict[str, t.Any] = {"sample_id": sample_id}
+        sample_id, config_name = _parse_sample_meta(path)
+        row: dict[str, t.Any] = {"sample_id": sample_id, "config_name": config_name}
 
         try:
-            img = Image.open(path).convert("RGB")
+            img = Image.open(path).convert("RGB").resize((512, 512), Image.LANCZOS)
             tensor = (to_tensor(img) * 255).byte().unsqueeze(0)  # (1, C, H, W) uint8
             faces_data = detector.detect_faces(
-                tensor, face_size=112, face_detection_threshold=0.6
+                tensor, face_size=112, face_detection_threshold=0.3
             )
             result = detector.forward(faces_data)
-            result["frame"] = [0]
+            result["frame"] = 0  # scalar broadcast — works for 1 or N face rows
             frame_result = result[result["frame"] == 0]
-            if frame_result.isna().any().any() or len(frame_result) == 0:
+            au_cols = [c for c in frame_result.columns if c.startswith("AU")]
+            if len(frame_result) == 0 or frame_result[au_cols].isna().all(axis=1).all():
                 raise ValueError("no face detected")
             largest_idx = frame_result.assign(
                 face_area=frame_result["FaceRectWidth"] * frame_result["FaceRectHeight"]
@@ -199,44 +200,41 @@ def _detect_libreface(image_paths: list[Path]) -> list[dict[str, t.Any]]:
 
     rows: list[dict[str, t.Any]] = []
     for path in image_paths:
-        sample_id = _parse_sample_id(path)
-        row: dict[str, t.Any] = {"sample_id": sample_id}
+        sample_id, config_name = _parse_sample_meta(path)
+        row: dict[str, t.Any] = {"sample_id": sample_id, "config_name": config_name}
         try:
             img = cv2.imread(str(path))
             result = get_facial_attributes(img)
             for au, raw_col in _LIBREFACE_AU_COLUMN_MAP.items():
                 val = result.get(raw_col, float("nan"))
                 row[f"detected_{au}"] = float(val) * _LIBREFACE_AU_SCALE[au]
-            for au in _PYFEAT_AU_COLUMNS:
-                if f"detected_{au}" not in row:
-                    row[f"detected_{au}"] = float("nan")
         except Exception as e:
             logger.warning(f"{path.name}: {e}")
-            for au in _PYFEAT_AU_COLUMNS:
+            for au in _LIBREFACE_AU_COLUMN_MAP:
                 row[f"detected_{au}"] = float("nan")
         rows.append(row)
 
     return rows
 
 
-def _parse_sample_id(path: Path) -> int:
-    """Extract the integer sample ID from a filename like sample_0042.png.
+def _parse_sample_meta(path: Path) -> tuple[int, str]:
+    """Extract sample ID and config name from a filename like sample_0042_smile.png.
 
     Args:
         path:
-            Image path with filename matching sample_NNNN.png.
+            Image path with filename matching sample_NNNN_<config>.png.
 
     Returns:
-        Integer sample ID.
+        Tuple of (sample_id, config_name).
 
     Raises:
         ValueError:
             If the filename does not match the expected pattern.
     """
-    match = re.search(r"sample_(\d+)", path.stem)
+    match = re.fullmatch(r"sample_(\d+)_([a-z_]+)", path.stem)
     if match is None:
-        raise ValueError(f"Cannot parse sample ID from {path.name}")
-    return int(match.group(1))
+        raise ValueError(f"Cannot parse sample metadata from {path.name}")
+    return int(match.group(1)), match.group(2)
 
 
 if __name__ == "__main__":

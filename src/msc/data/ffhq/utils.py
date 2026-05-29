@@ -6,15 +6,25 @@ import h5py
 import pandas as pd
 from loguru import logger
 
-from ...constants import FFHQ_EMBEDDINGS_PATH, FFHQ_INDEX_PATH, PYFEAT_FFHQ_PATH
+import typing as t
+
+from ...constants import (
+    FFHQ_EMBEDDINGS_PATH,
+    FFHQ_INDEX_PATH,
+    LIBREFACE_FFHQ_PATH,
+    PYFEAT_FFHQ_PATH,
+)
 
 
-def load_ffhq_df() -> pd.DataFrame:
+def load_ffhq_df(
+    detector: t.Literal["pyfeat", "libreface"] = "pyfeat",
+) -> pd.DataFrame:
     """Load the merged FFHQ dataset index with AU data and split assignments.
 
-    Reads the LibreFace parquet (AU values), merges the split column from the
-    age-filtered index, then filters to images whose ArcFace embeddings are
-    present in the HDF5 file.
+    Args:
+        detector (optional):
+            Which AU detector parquet to load ('pyfeat' or 'libreface').
+            Defaults to 'pyfeat'.
 
     Returns:
         DataFrame with AU columns, image_number, and split column, restricted
@@ -22,17 +32,18 @@ def load_ffhq_df() -> pd.DataFrame:
 
     Raises:
         FileNotFoundError:
-          If the LibreFace parquet, age index, or embeddings HDF5 are missing.
+          If the AU parquet, age index, or embeddings HDF5 are missing.
     """
+    au_path = LIBREFACE_FFHQ_PATH if detector == "libreface" else PYFEAT_FFHQ_PATH
     for path, hint in [
-        (PYFEAT_FFHQ_PATH, "run pyfeat_ffhq.py first"),
+        (au_path, f"run {'libreface' if detector == 'libreface' else 'pyfeat'}_ffhq.py first"),
         (FFHQ_INDEX_PATH, "run build_ffhq_index.py first"),
         (FFHQ_EMBEDDINGS_PATH, "run precompute_embeddings.py --dataset ffhq first"),
     ]:
         if not path.exists():
             raise FileNotFoundError(f"{path} not found — {hint}")
 
-    libreface = pd.read_parquet(PYFEAT_FFHQ_PATH)
+    libreface = pd.read_parquet(au_path)
     libreface["image_number"] = libreface["image"].apply(lambda p: Path(p).name)
 
     index = pd.read_parquet(FFHQ_INDEX_PATH, columns=["image_number", "split"])

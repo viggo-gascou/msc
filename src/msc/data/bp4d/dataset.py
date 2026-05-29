@@ -19,10 +19,12 @@ from ...constants import (
     BP4D_EMBEDDINGS_DIR,
     BP4D_PREPROCESSED_DIR,
     BP4D_SEQUENCES_DIR,
+    LIBREFACE_AU_COLUMNS,
+    LIBREFACE_AU_SCALE,
     PYFEAT_AU_COLUMNS,
     PYFEAT_AU_SCALE,
 )
-from .utils import load_index, load_pyfeat_aus, resolve_frame_path
+from .utils import load_index, load_libreface_aus, load_pyfeat_aus, resolve_frame_path
 
 
 class BP4DSample(t.TypedDict):
@@ -88,6 +90,7 @@ class BP4DDataset(VisionDataset):
         embeddings_dir: Path = BP4D_EMBEDDINGS_DIR,
         index_path: Path | None = None,
         captions_path: Path | None = None,
+        detector: t.Literal["pyfeat", "libreface"] = "pyfeat",
     ) -> None:
         """BP4D frame-level dataset.
 
@@ -113,6 +116,9 @@ class BP4DDataset(VisionDataset):
             captions_path (optional):
                 Path to the captions parquet. Defaults to BP4D_CAPTIONS_PATH.
                 If the file does not exist, captions will be empty strings.
+            detector (optional):
+                Which AU detector annotations to load ('pyfeat' or 'libreface').
+                Defaults to 'pyfeat'.
         """
         super().__init__(
             root=sequences_dir, transform=transform, target_transform=target_transform
@@ -120,6 +126,18 @@ class BP4DDataset(VisionDataset):
         self.load_face = load_face
         self.preprocessed_dir = preprocessed_dir
         self.embeddings_dir = embeddings_dir
+        self.detector = detector
+
+        if detector == "libreface":
+            self.au_columns = LIBREFACE_AU_COLUMNS
+            self.au_scale = LIBREFACE_AU_SCALE
+            au_loader = load_libreface_aus
+            missing_label = "libreface"
+        else:
+            self.au_columns = PYFEAT_AU_COLUMNS
+            self.au_scale = PYFEAT_AU_SCALE
+            au_loader = load_pyfeat_aus
+            missing_label = "py-feat"
 
         index = load_index(path=index_path)
 
@@ -129,7 +147,7 @@ class BP4DDataset(VisionDataset):
             index = index[index["subject"].isin(subjects)]
 
         self.index = index.reset_index(drop=True)
-        self._lf_aus: dict[str, dict[tuple[str, int], np.ndarray]] = load_pyfeat_aus()
+        self._lf_aus: dict[str, dict[tuple[str, int], np.ndarray]] = au_loader()
         valid = {
             (task, subj, frame)
             for task, task_dict in self._lf_aus.items()
@@ -146,7 +164,7 @@ class BP4DDataset(VisionDataset):
         if dropped:
             logger.warning(
                 f"BP4DDataset: dropped {dropped}/{before} frames"
-                " with no py-feat detection"
+                f" with no {missing_label} detection"
             )
 
         self.seq_index: defaultdict[
@@ -200,7 +218,7 @@ class BP4DDataset(VisionDataset):
             aus = task_dict.get((subject, frame))
             if aus is not None:
                 return aus
-        return np.full(len(PYFEAT_AU_COLUMNS), float("nan"), dtype=np.float32)
+        return np.full(len(self.au_columns), float("nan"), dtype=np.float32)
 
     def __len__(self) -> int:
         """Return the number of samples in the dataset."""
@@ -237,7 +255,7 @@ class BP4DDataset(VisionDataset):
 
         aus = torch.from_numpy(
             self._lookup_aus(task, subject, au_frame)
-        ) * torch.tensor(PYFEAT_AU_SCALE)
+        ) * torch.tensor(self.au_scale)
 
         image = self.load_raw(subject=subject, task=task, img_frame=img_frame)
         if self.transform is not None:
@@ -270,7 +288,7 @@ class BP4DDataset(VisionDataset):
             target_image = self.transform(target_image)
         target_aus = torch.from_numpy(
             self._lookup_aus(target_task, subject, int(target_row["frame"]))
-        ) * torch.tensor(PYFEAT_AU_SCALE)
+        ) * torch.tensor(self.au_scale)
 
         face = (
             torch.from_numpy(pre_f[subject]["faces"][pos]) if self.load_face else None

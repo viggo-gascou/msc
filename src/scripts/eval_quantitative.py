@@ -1,27 +1,26 @@
-r"""Quantitative evaluation: AU MSE, distribution shift, latent distance, ArcFace cosim.
+r"""Quantitative evaluation: AU MSE, distribution shift, ArcFace cosim.
 
 Two-phase workflow
 ------------------
 Phase 1 (project env) -- generate images and compute non-AU metrics::
 
     uv run src/scripts/eval_quantitative.py \
-        --au-adapter-path checkpoints/.../best_au_adapter.safetensors \
-        --config-path checkpoints/.../config.yaml \
+        --model-dir models/sd21_pyfeat_pretrain \
         --dataset bp4d \
-        --output-dir eval/bp4d_pyfeat
+        --output-dir eval/sd21_pyfeat_pretrain_bp4d
 
 Phase 2 (pyfeat/libreface env) -- detect AUs on generated images::
 
     python src/scripts/detect_generated_aus.py \
-        --images-dir eval/bp4d_pyfeat/generated \
+        --images-dir eval/sd21_pyfeat_pretrain_bp4d/generated \
         --detector pyfeat \
-        --output eval/bp4d_pyfeat/au_detections.parquet
+        --output eval/sd21_pyfeat_pretrain_bp4d/au_detections.parquet
 
 Phase 3 (project env) -- compute AU metrics::
 
     uv run src/scripts/eval_quantitative.py \
-        --output-dir eval/bp4d_pyfeat \
-        --au-detections eval/bp4d_pyfeat/au_detections.parquet \
+        --output-dir eval/sd21_pyfeat_pretrain_bp4d \
+        --au-detections eval/sd21_pyfeat_pretrain_bp4d/au_detections.parquet \
         --metrics-only
 """
 
@@ -40,12 +39,28 @@ from PIL import Image
 from scipy.stats import wasserstein_distance
 from tqdm import tqdm
 
-from msc.constants import BP4D_TEST_INDEX_PATH, PYFEAT_AU_COLUMNS, RANDOM_SEED
+from msc.constants import (
+    BP4D_TEST_INDEX_PATH,
+    LIBREFACE_AU_NAME_TO_IDX,
+    PYFEAT_AU_COLUMNS,
+    PYFEAT_AU_NAME_TO_IDX,
+    RANDOM_SEED,
+)
 from msc.data import BP4DDataset, FFHQDataset, get_transforms
 from msc.model_utils import load_inference_pipeline
 
 if t.TYPE_CHECKING:
     from msc.inference_pipeline import AUAdapterPipeline
+
+# Fixed emotion AU configs used as conditioning targets during eval.
+# Keys are AU names; values are intensities in [0, 1].
+# All unspecified AUs are set to 0 (neutral).
+AU_CONFIGS: dict[str, dict[str, float]] = {
+    "smile": {"AU06": 0.8, "AU12": 0.8},
+    "surprise": {"AU01": 0.8, "AU02": 0.8, "AU05": 0.8, "AU26": 0.8},
+    "anger": {"AU04": 0.8, "AU05": 0.8, "AU07": 0.8, "AU23": 0.8},
+    "sadness": {"AU01": 0.6, "AU04": 0.7, "AU15": 0.6, "AU17": 0.5},
+}
 
 
 def main() -> None:
@@ -137,7 +152,7 @@ def main() -> None:
     metadata.to_parquet(metadata_path, index=False)
     logger.info(f"Metadata saved to {metadata_path}")
 
-    _print_non_au_summary(metadata=metadata, dataset=args.dataset)
+    _print_non_au_summary(metadata=metadata)
 
     if args.au_detections is not None:
         detections = pd.read_parquet(args.au_detections)
@@ -188,13 +203,15 @@ def _run_eval(
 ) -> pd.DataFrame:
     """Generate images and compute ArcFace + latent metrics for all samples.
 
+    Each source image is generated once per AU config in AU_CONFIGS.
+
     Args:
         pipeline:
             Loaded AUAdapterPipeline with arcface_extractor set.
         dataset:
             Dataset to evaluate on ('bp4d' or 'ffhq').
         num_samples:
-            Number of test samples to evaluate.
+            Number of source images to evaluate.
         strength:
             img2img noise strength.
         au_scale:
@@ -217,44 +234,57 @@ def _run_eval(
             Model dtype.
 
     Returns:
-        DataFrame with one row per sample containing all computed metrics.
+        DataFrame with one row per (source image, AU config) pair.
     """
     _, val_tf = get_transforms()
     is_bp4d = dataset == "bp4d"
+    detector = "libreface" if pipeline.au_encoder.num_aus == 17 else "pyfeat"
 
     if is_bp4d:
         ds: BP4DDataset | FFHQDataset = BP4DDataset(
-            index_path=BP4D_TEST_INDEX_PATH, transform=val_tf
+            index_path=BP4D_TEST_INDEX_PATH, transform=val_tf, detector=detector
         )
     else:
-        ds = FFHQDataset(split="test", transform=val_tf)
+        ds = FFHQDataset(split="test", transform=val_tf, detector=detector)
+
+    au_name_to_idx = (
+        LIBREFACE_AU_NAME_TO_IDX if detector == "libreface" else PYFEAT_AU_NAME_TO_IDX
+    )
+    au_config_tensors = _build_au_config_tensors(
+        configs=AU_CONFIGS,
+        num_aus=pipeline.au_encoder.num_aus,
+        au_name_to_idx=au_name_to_idx,
+    )
 
     all_indices = torch.randperm(
         len(ds), generator=torch.Generator().manual_seed(seed)
     )[:num_samples].tolist()
-    indices = [
+    source_indices = [
         (i, idx) for i, idx in enumerate(all_indices) if i % num_shards == shard_idx
     ]
 
     rows: list[dict[str, t.Any]] = []
-    for i, idx in tqdm(indices, desc="Evaluating", unit="sample"):
+    for i, idx in tqdm(source_indices, desc="Evaluating", unit="source"):
         sample = ds[idx]
-        row = _evaluate_sample(
-            pipeline=pipeline,
-            sample=sample,
-            sample_id=i,
-            dataset_idx=idx,
-            is_bp4d=is_bp4d,
-            ds=ds,
-            strength=strength,
-            au_scale=au_scale,
-            guidance_scale=guidance_scale,
-            num_steps=num_steps,
-            gen_dir=gen_dir,
-            device=device,
-            dtype=dtype,
-        )
-        rows.append(row)
+        for config_name, aus_tensor in au_config_tensors.items():
+            row = _evaluate_sample(
+                pipeline=pipeline,
+                sample=sample,
+                sample_id=i,
+                dataset_idx=idx,
+                config_name=config_name,
+                requested_aus=aus_tensor,
+                is_bp4d=is_bp4d,
+                ds=ds,
+                strength=strength,
+                au_scale=au_scale,
+                guidance_scale=guidance_scale,
+                num_steps=num_steps,
+                gen_dir=gen_dir,
+                device=device,
+                dtype=dtype,
+            )
+            rows.append(row)
 
     return pd.DataFrame(rows)
 
@@ -264,6 +294,8 @@ def _evaluate_sample(
     sample: dict[str, t.Any],
     sample_id: int,
     dataset_idx: int,
+    config_name: str,
+    requested_aus: torch.Tensor,
     is_bp4d: bool,
     ds: "BP4DDataset | FFHQDataset",
     strength: float,
@@ -276,14 +308,11 @@ def _evaluate_sample(
 ) -> dict[str, t.Any]:
     source_pil = _tensor_to_pil(tensor=sample["image"])
     arcface = sample["arcface"].unsqueeze(0).to(device=device, dtype=dtype)
-
-    # BP4D: transfer target expression; FFHQ: reconstruct from source AUs.
-    requested_aus = (sample["target_aus"] if is_bp4d else sample["aus"]).nan_to_num(0.0)
     aus_in = requested_aus.unsqueeze(0).to(device=device, dtype=dtype)
 
     with torch.no_grad():
         out = pipeline(
-            prompt=sample.get("target_caption", ""),
+            prompt="",
             aus=aus_in,
             image=source_pil,
             arcface_embeds=arcface,
@@ -294,7 +323,7 @@ def _evaluate_sample(
         )
     gen_pil: Image.Image = out.images[0]
 
-    gen_path = gen_dir / f"sample_{sample_id:04d}.png"
+    gen_path = gen_dir / f"sample_{sample_id:04d}_{config_name}.png"
     gen_pil.save(gen_path)
 
     arcface_cosim: float | None = None
@@ -306,29 +335,19 @@ def _evaluate_sample(
             src_arcface.unsqueeze(0), gen_arcface.unsqueeze(0), dim=1
         ).item()
 
-    latent_d_src_tgt: float | None = None
-    latent_d_pred_tgt: float | None = None
-    latent_d_src_pred: float | None = None
-    if is_bp4d:
-        z_src = _encode_latent(vae=pipeline.vae, img=sample["image"], device=device)
-        z_tgt = _encode_latent(
-            vae=pipeline.vae, img=sample["target_image"], device=device
-        )
-        gen_tensor = _pil_to_normalized_tensor(gen_pil)
-        z_pred = _encode_latent(vae=pipeline.vae, img=gen_tensor, device=device)
-        latent_d_src_tgt = _rmse(z_src, z_tgt)
-        latent_d_pred_tgt = _rmse(z_pred, z_tgt)
-        latent_d_src_pred = _rmse(z_src, z_pred)
+    z_src = _encode_latent(vae=pipeline.vae, img=sample["image"], device=device)
+    gen_tensor = _pil_to_normalized_tensor(gen_pil)
+    z_pred = _encode_latent(vae=pipeline.vae, img=gen_tensor, device=device)
+    latent_d_src_pred = _rmse(z_src, z_pred)
 
     row: dict[str, t.Any] = {
         "sample_id": sample_id,
         "dataset_idx": dataset_idx,
+        "config_name": config_name,
         "generated_path": str(gen_path),
         "requested_aus": requested_aus.tolist(),
         "source_aus": sample["aus"].nan_to_num(0.0).tolist(),
         "arcface_cosim": arcface_cosim,
-        "latent_d_src_tgt": latent_d_src_tgt,
-        "latent_d_pred_tgt": latent_d_pred_tgt,
         "latent_d_src_pred": latent_d_src_pred,
     }
     if is_bp4d:
@@ -343,7 +362,7 @@ def _evaluate_sample(
 
 
 def _print_au_metrics(metadata: pd.DataFrame, detections: pd.DataFrame) -> None:
-    """Compute and print AU MSE and distribution shift metrics.
+    """Compute and print per-config AU MSE and Wasserstein metrics.
 
     Args:
         metadata:
@@ -351,51 +370,62 @@ def _print_au_metrics(metadata: pd.DataFrame, detections: pd.DataFrame) -> None:
         detections:
             Per-sample AU detections from detect_generated_aus.py.
     """
-    merged = metadata.merge(detections, on="sample_id", how="inner")
-    n = len(merged)
-    logger.info(f"Computing AU metrics over {n} samples with detections.")
+    merged = metadata.merge(detections, on=["sample_id", "config_name"], how="inner")
+    logger.info(f"Computing AU metrics over {len(merged)} samples with detections.")
 
-    requested = np.stack(merged["requested_aus"].tolist())
-    source = np.stack(merged["source_aus"].tolist())
-    detected = merged[[f"detected_{au}" for au in PYFEAT_AU_COLUMNS]].values
+    au_cols = [c for c in detections.columns if c.startswith("detected_")]
+    au_names = [c.removeprefix("detected_") for c in au_cols]
 
-    au_mse = float(np.mean((detected - requested) ** 2))
-    au_mae = float(np.mean(np.abs(detected - requested)))
+    for config_name, group in merged.groupby("config_name"):
+        detected = group[au_cols].values
+        source = np.stack(group["source_aus"].tolist())
+        config_aus = AU_CONFIGS[str(config_name)]
 
-    w_src_req = float(
-        np.mean(
-            [
-                wasserstein_distance(source[:, k], requested[:, k])
-                for k in range(len(PYFEAT_AU_COLUMNS))
-            ]
-        )
-    )
-    w_det_req = float(
-        np.mean(
-            [
-                wasserstein_distance(detected[:, k], requested[:, k])
-                for k in range(len(PYFEAT_AU_COLUMNS))
-            ]
-        )
-    )
-    improvement = w_det_req / max(w_src_req, 1e-8)
+        # Build (N, num_active) arrays using only the AUs present in this config
+        # and in the detection output, comparing against the known fixed targets.
+        active_cols = [
+            i for i, name in enumerate(au_names)
+            if name.upper() in {k.upper() for k in config_aus}
+        ]
+        target_vals = np.array([
+            config_aus[au_names[i].upper()] for i in active_cols
+        ], dtype=np.float32)
 
-    logger.info("AU metrics:")
-    logger.info(f"  MSE (detected vs requested):                {au_mse:.4f}")
-    logger.info(f"  MAE (detected vs requested):                {au_mae:.4f}")
-    logger.info(f"  Wasserstein source->requested (baseline):   {w_src_req:.4f}")
-    logger.info(f"  Wasserstein detected->requested:            {w_det_req:.4f}")
-    logger.info(f"  Improvement ratio (< 1 = better):          {improvement:.4f}")
+        inactive_cols = [i for i in range(len(au_names)) if i not in active_cols]
+
+        det_active = detected[:, active_cols]  # (N, num_active)
+        target_row = np.broadcast_to(target_vals, det_active.shape)
+        det_inactive = detected[:, inactive_cols]  # (N, num_inactive), should be ~0
+
+        au_mse = float(np.mean((det_active - target_row) ** 2))
+        au_mae = float(np.mean(np.abs(det_active - target_row)))
+        w_det_req = float(np.mean([
+            wasserstein_distance(det_active[:, j], np.full(len(group), target_vals[j]))
+            for j in range(len(active_cols))
+        ]))
+        inactive_mse = float(np.nanmean(det_inactive ** 2))
+        inactive_mae = float(np.nanmean(np.abs(det_inactive)))
+
+        n_det = min(detected.shape[1], source.shape[1])
+        src_det_mae = float(np.nanmean(np.abs(detected[:, :n_det] - source[:, :n_det])))
+        src_det_mse = float(np.nanmean((detected[:, :n_det] - source[:, :n_det]) ** 2))
+
+        logger.info(f"  [{config_name}]  n={len(group)}")
+        logger.info(f"    MSE  active AUs (target={target_vals.mean():.2f}):  {au_mse:.4f}")
+        logger.info(f"    MAE  active AUs:                                    {au_mae:.4f}")
+        logger.info(f"    Wasserstein det->req (active):                      {w_det_req:.4f}")
+        logger.info(f"    MSE  inactive AUs (target=0):                       {inactive_mse:.4f}")
+        logger.info(f"    MAE  inactive AUs:                                  {inactive_mae:.4f}")
+        logger.info(f"    MAE  src->det (all AUs, overall change):            {src_det_mae:.4f}")
+        logger.info(f"    MSE  src->det (all AUs):                            {src_det_mse:.4f}")
 
 
-def _print_non_au_summary(metadata: pd.DataFrame, dataset: str) -> None:
-    """Print ArcFace and latent distance summary statistics.
+def _print_non_au_summary(metadata: pd.DataFrame) -> None:
+    """Print ArcFace cosim and latent distance summary statistics.
 
     Args:
         metadata:
             Per-sample metadata from the generation phase.
-        dataset:
-            Dataset name ('bp4d' or 'ffhq').
     """
     cosim = metadata["arcface_cosim"].dropna()
     if len(cosim) > 0:
@@ -404,18 +434,40 @@ def _print_non_au_summary(metadata: pd.DataFrame, dataset: str) -> None:
             f"median={cosim.median():.4f}  std={cosim.std():.4f}"
         )
 
-    if dataset == "bp4d":
-        d_src_tgt = metadata["latent_d_src_tgt"].dropna().values
-        d_pred_tgt = metadata["latent_d_pred_tgt"].dropna().values
-        valid = d_src_tgt >= max(float(np.percentile(d_src_tgt, 10)), 1e-3)
-        ratio = d_pred_tgt[valid] / d_src_tgt[valid]
-        improved = float((ratio < 1).mean() * 100)
+    d_src_pred = metadata["latent_d_src_pred"].dropna()
+    if len(d_src_pred) > 0:
         logger.info(
-            f"Latent distance:  mean d(src,tgt)={d_src_tgt.mean():.4f}  "
-            f"mean d(pred,tgt)={d_pred_tgt.mean():.4f}  "
-            f"improved={improved:.1f}%  "
-            f"median ratio={float(np.median(ratio)):.4f}"
+            f"Latent d(src, pred):  mean={d_src_pred.mean():.4f}  "
+            f"median={d_src_pred.median():.4f}"
         )
+
+
+def _build_au_config_tensors(
+    configs: dict[str, dict[str, float]],
+    num_aus: int,
+    au_name_to_idx: dict[str, int],
+) -> dict[str, torch.Tensor]:
+    """Convert AU config dicts to fixed-size tensors.
+
+    Args:
+        configs:
+            Dict mapping config name to {AU name: intensity} overrides.
+        num_aus:
+            Size of the AU vector expected by the model.
+        au_name_to_idx:
+            Mapping from AU name (e.g. 'AU12') to index in the AU vector.
+
+    Returns:
+        Dict mapping config name to a float32 tensor of shape (num_aus,).
+    """
+    result: dict[str, torch.Tensor] = {}
+    for name, overrides in configs.items():
+        vec = torch.zeros(num_aus, dtype=torch.float32)
+        for au_name, intensity in overrides.items():
+            if au_name in au_name_to_idx:
+                vec[au_name_to_idx[au_name]] = intensity
+        result[name] = vec
+    return result
 
 
 def _encode_latent(
