@@ -153,9 +153,6 @@ def main() -> None:
 
     au_adapter_path, config_path = _resolve_model_paths(args)
 
-    if args.eval_mode == "paired" and args.dataset != "bp4d":
-        raise ValueError("--eval-mode paired requires --dataset bp4d")
-
     device = torch.device(args.device)
     dtype = torch.bfloat16 if args.device == "cuda" else torch.float32
 
@@ -395,7 +392,7 @@ def _evaluate_sample(
 
     with torch.no_grad():
         out = pipeline(
-            prompt="",
+            prompt=sample["target_caption"],
             aus=aus_in,
             image=source_pil,
             arcface_embeds=arcface,
@@ -456,9 +453,7 @@ def _evaluate_sample(
 
 
 def _print_au_metrics(
-    metadata: pd.DataFrame,
-    detections: pd.DataFrame,
-    eval_mode: str = "emotion",
+    metadata: pd.DataFrame, detections: pd.DataFrame, eval_mode: str = "emotion"
 ) -> None:
     """Compute and print AU MSE and Wasserstein metrics.
 
@@ -485,9 +480,7 @@ def _print_au_metrics(
         n = min(detected.shape[1], requested.shape[1])
         au_mae = float(np.nanmean(np.abs(detected[:, :n] - requested[:, :n])))
         au_mse = float(np.nanmean((detected[:, :n] - requested[:, :n]) ** 2))
-        src_det_mae = float(
-            np.nanmean(np.abs(detected[:, :n] - source[:, :n]))
-        )
+        src_det_mae = float(np.nanmean(np.abs(detected[:, :n] - source[:, :n])))
         logger.info(f"  [paired]  n={len(merged)}")
         logger.info(f"    MAE  detected vs requested AUs: {au_mae:.4f}")
         logger.info(f"    MSE  detected vs requested AUs: {au_mse:.4f}")
@@ -504,12 +497,13 @@ def _print_au_metrics(
         # Build (N, num_active) arrays using only the AUs present in this config
         # and in the detection output, comparing against the known fixed targets.
         active_cols = [
-            i for i, name in enumerate(au_names)
+            i
+            for i, name in enumerate(au_names)
             if name.upper() in {k.upper() for k in config_aus}
         ]
-        target_vals = np.array([
-            config_aus[au_names[i].upper()] for i in active_cols
-        ], dtype=np.float32)
+        target_vals = np.array(
+            [config_aus[au_names[i].upper()] for i in active_cols], dtype=np.float32
+        )
 
         inactive_cols = [i for i in range(len(au_names)) if i not in active_cols]
 
@@ -519,26 +513,34 @@ def _print_au_metrics(
 
         au_mse = float(np.mean((det_active - target_row) ** 2))
         au_mae = float(np.mean(np.abs(det_active - target_row)))
-        w_det_req = float(np.mean([
-            wasserstein_distance(det_active[:, j], np.full(len(group), target_vals[j]))
-            for j in range(len(active_cols))
-        ]))
-        inactive_mse = float(np.nanmean(det_inactive ** 2))
+        w_det_req = float(
+            np.mean(
+                [
+                    wasserstein_distance(
+                        det_active[:, j], np.full(len(group), target_vals[j])
+                    )
+                    for j in range(len(active_cols))
+                ]
+            )
+        )
+        inactive_mse = float(np.nanmean(det_inactive**2))
         inactive_mae = float(np.nanmean(np.abs(det_inactive)))
 
         n_det = min(detected.shape[1], source.shape[1])
         src_det_mae = float(np.nanmean(np.abs(detected[:, :n_det] - source[:, :n_det])))
         src_det_mse = float(np.nanmean((detected[:, :n_det] - source[:, :n_det]) ** 2))
 
-        per_config.append({
-            "au_mse": au_mse,
-            "au_mae": au_mae,
-            "w_det_req": w_det_req,
-            "inactive_mse": inactive_mse,
-            "inactive_mae": inactive_mae,
-            "src_det_mae": src_det_mae,
-            "src_det_mse": src_det_mse,
-        })
+        per_config.append(
+            {
+                "au_mse": au_mse,
+                "au_mae": au_mae,
+                "w_det_req": w_det_req,
+                "inactive_mse": inactive_mse,
+                "inactive_mae": inactive_mae,
+                "src_det_mae": src_det_mae,
+                "src_det_mse": src_det_mse,
+            }
+        )
 
         tgt_mean = target_vals.mean()
         logger.info(f"  [{config_name}]  n={len(group)}")

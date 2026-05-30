@@ -36,6 +36,8 @@ NUM_SHARDS="${NUM_SHARDS:-1}"
 echo "Running on $(hostname) (shard ${SHARD_IDX}/${NUM_SHARDS}):"
 nvidia-smi --query-gpu=index,gpu_name,memory.total --format=csv,noheader,nounits | awk -F',' '{printf "  GPU %s: %s (%s MiB)\n", $1, $2, $3}'
 
+echo "Running with args MODEL_NAME=${MODEL_NAME} DATASET=${DATASET} EVAL_MODE=${EVAL_MODE} DETECTOR=${DETECTOR}"
+
 _run_phase() {
     local output_dir="$1"
     local extra_args="$2"
@@ -57,7 +59,10 @@ _run_phase() {
         --shard-idx "${SHARD_IDX}" \
         --num-shards "${NUM_SHARDS}"
     local exit_code=$?
-    [ $exit_code -ne 0 ] && { echo "Phase 1 failed"; return $exit_code; }
+    [ $exit_code -ne 0 ] && {
+        echo "Phase 1 failed"
+        return $exit_code
+    }
 
     if [ "${NUM_SHARDS}" -gt 1 ] && [ "${SHARD_IDX}" -ne 0 ]; then
         echo "Shard ${SHARD_IDX} done. Run detection and metrics once all shards complete."
@@ -85,7 +90,10 @@ EOF
         --detector "${DETECTOR}" \
         --output "${output_dir}/au_detections.parquet"
     exit_code=$?
-    [ $exit_code -ne 0 ] && { echo "Phase 2 failed"; return $exit_code; }
+    [ $exit_code -ne 0 ] && {
+        echo "Phase 2 failed"
+        return $exit_code
+    }
 
     # Phase 3: compute AU metrics
     echo "Phase 3: computing AU metrics at $(date)"
@@ -95,7 +103,10 @@ EOF
         --eval-mode "${eval_mode_arg}" \
         --metrics-only
     exit_code=$?
-    [ $exit_code -ne 0 ] && { echo "Phase 3 failed"; return $exit_code; }
+    [ $exit_code -ne 0 ] && {
+        echo "Phase 3 failed"
+        return $exit_code
+    }
     return 0
 }
 
