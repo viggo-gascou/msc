@@ -195,7 +195,6 @@ def _detect_libreface(image_paths: list[Path]) -> list[dict[str, t.Any]]:
     Returns:
         List of dicts with sample_id and detected AU columns (normalised to [0,1]).
     """
-    import cv2  # type: ignore[import]
     from libreface import get_facial_attributes  # type: ignore[import]
 
     rows: list[dict[str, t.Any]] = []
@@ -203,8 +202,7 @@ def _detect_libreface(image_paths: list[Path]) -> list[dict[str, t.Any]]:
         sample_id, config_name = _parse_sample_meta(path)
         row: dict[str, t.Any] = {"sample_id": sample_id, "config_name": config_name}
         try:
-            img = cv2.imread(str(path))
-            result = get_facial_attributes(img)
+            result = get_facial_attributes(str(path))
             for au, raw_col in _LIBREFACE_AU_COLUMN_MAP.items():
                 val = result.get(raw_col, float("nan"))
                 row[f"detected_{au}"] = float(val) * _LIBREFACE_AU_SCALE[au]
