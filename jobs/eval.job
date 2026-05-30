@@ -18,11 +18,12 @@ export UV_OFFLINE=1
 export OMP_NUM_THREADS=6
 export NO_ALBUMENTATIONS_UPDATE=1
 
-# Set MODEL_NAME externally, e.g.:
-#   MODEL_NAME=sd21_pyfeat_pretrain sbatch jobs/eval.job
+# Set MODEL_NAME and DATASET externally, e.g.:
+#   MODEL_NAME=sd21_pyfeat_pretrain DATASET=ffhq sbatch jobs/eval.job
 # or via sbatch --export:
-#   sbatch --export=ALL,MODEL_NAME=sd21_pyfeat_finetune jobs/eval.job
+#   sbatch --export=ALL,MODEL_NAME=sd21_pyfeat_finetune,DATASET=bp4d jobs/eval.job
 MODEL_NAME="${MODEL_NAME:-sd21_pyfeat_pretrain}"
+DATASET="${DATASET:-ffhq}"
 MODEL_DIR="models/${MODEL_NAME}"
 # Derive detector from second field of model name (sd21_pyfeat_pretrain -> pyfeat)
 DETECTOR=$(echo "${MODEL_NAME}" | cut -d_ -f2)
@@ -36,14 +37,14 @@ echo "Running on $(hostname) (shard ${SHARD_IDX}/${NUM_SHARDS}):"
 nvidia-smi --query-gpu=index,gpu_name,memory.total --format=csv,noheader,nounits | awk -F',' '{printf "  GPU %s: %s (%s MiB)\n", $1, $2, $3}'
 
 for AU_BASELINE in zero source; do
-    OUTPUT_DIR="eval/${MODEL_NAME}_bp4d_${AU_BASELINE}"
+    OUTPUT_DIR="eval/${MODEL_NAME}_${DATASET}_${AU_BASELINE}"
 
     # Phase 1: generate images
     echo "=== Baseline: ${AU_BASELINE} ==="
     echo "Phase 1: generating images at $(date)"
     .venv/bin/python src/scripts/eval_quantitative.py \
         --model-dir "${MODEL_DIR}" \
-        --dataset bp4d \
+        --dataset "${DATASET}" \
         --output-dir "${OUTPUT_DIR}" \
         --num-samples 500 \
         --num-steps 300 \
