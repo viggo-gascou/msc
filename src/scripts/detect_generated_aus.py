@@ -195,16 +195,27 @@ def _detect_libreface(image_paths: list[Path]) -> list[dict[str, t.Any]]:
     Returns:
         List of dicts with sample_id and detected AU columns (normalised to [0,1]).
     """
-    from libreface import get_facial_attributes  # type: ignore[import]
+    import torch  # type: ignore[import]
+    import libreface  # type: ignore[import]
+
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    str_paths = [str(p) for p in image_paths]
+
+    det_df, intensity_df = libreface.get_au_intensities_and_detect_aus_video(
+        str_paths, device=device, batch_size=32, num_workers=0
+    )
+    combined = pd.concat(
+        [det_df.reset_index(drop=True), intensity_df.reset_index(drop=True)], axis=1
+    )
 
     rows: list[dict[str, t.Any]] = []
-    for path in image_paths:
+    for i, path in enumerate(image_paths):
         sample_id, config_name = _parse_sample_meta(path)
         row: dict[str, t.Any] = {"sample_id": sample_id, "config_name": config_name}
         try:
-            result = get_facial_attributes(str(path))
+            result_row = combined.iloc[i]
             for au, raw_col in _LIBREFACE_AU_COLUMN_MAP.items():
-                val = result.get(raw_col, float("nan"))
+                val = result_row[raw_col] if raw_col in result_row.index else float("nan")
                 row[f"detected_{au}"] = float(val) * _LIBREFACE_AU_SCALE[au]
         except Exception as e:
             logger.warning(f"{path.name}: {e}")
