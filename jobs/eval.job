@@ -18,12 +18,12 @@ export UV_OFFLINE=1
 export OMP_NUM_THREADS=6
 export NO_ALBUMENTATIONS_UPDATE=1
 
-# Set MODEL_NAME and DATASET externally, e.g.:
-#   MODEL_NAME=sd21_pyfeat_pretrain DATASET=ffhq sbatch jobs/eval.job
-# or via sbatch --export:
-#   sbatch --export=ALL,MODEL_NAME=sd21_pyfeat_finetune,DATASET=bp4d jobs/eval.job
+# Set MODEL_NAME, DATASET, and EVAL_MODE externally, e.g.:
+#   sbatch --export=ALL,MODEL_NAME=sd21_pyfeat_pretrain,DATASET=bp4d,EVAL_MODE=emotion jobs/eval.job
+#   sbatch --export=ALL,MODEL_NAME=sd21_pyfeat_pretrain,DATASET=bp4d,EVAL_MODE=paired jobs/eval.job
 MODEL_NAME="${MODEL_NAME:-sd21_pyfeat_pretrain}"
-DATASET="${DATASET:-ffhq}"
+DATASET="${DATASET:-bp4d}"
+EVAL_MODE="${EVAL_MODE:-emotion}"
 MODEL_DIR="models/${MODEL_NAME}"
 # Derive detector from second field of model name (sd21_pyfeat_pretrain -> pyfeat)
 DETECTOR=$(echo "${MODEL_NAME}" | cut -d_ -f2)
@@ -36,40 +36,37 @@ NUM_SHARDS="${NUM_SHARDS:-1}"
 echo "Running on $(hostname) (shard ${SHARD_IDX}/${NUM_SHARDS}):"
 nvidia-smi --query-gpu=index,gpu_name,memory.total --format=csv,noheader,nounits | awk -F',' '{printf "  GPU %s: %s (%s MiB)\n", $1, $2, $3}'
 
-for AU_BASELINE in zero source; do
-    OUTPUT_DIR="eval/${MODEL_NAME}_${DATASET}_${AU_BASELINE}"
+_run_phase() {
+    local output_dir="$1"
+    local extra_args="$2"
+    local eval_mode_arg="$3"
 
     # Phase 1: generate images
-    echo "=== Baseline: ${AU_BASELINE} ==="
     echo "Phase 1: generating images at $(date)"
     .venv/bin/python src/scripts/eval_quantitative.py \
         --model-dir "${MODEL_DIR}" \
         --dataset "${DATASET}" \
-        --output-dir "${OUTPUT_DIR}" \
+        --output-dir "${output_dir}" \
         --num-samples 500 \
         --num-steps 300 \
         --strength 0.5 \
         --au-scale 1.0 \
         --guidance-scale 3.0 \
-        --au-baseline "${AU_BASELINE}" \
+        --eval-mode "${eval_mode_arg}" \
+        ${extra_args} \
         --shard-idx "${SHARD_IDX}" \
         --num-shards "${NUM_SHARDS}"
-    SCRIPT_EXIT=$?
-    if [ $SCRIPT_EXIT -ne 0 ]; then
-        echo "Phase 1 (${AU_BASELINE}) failed, exiting"
-        exit $SCRIPT_EXIT
-    fi
+    local exit_code=$?
+    [ $exit_code -ne 0 ] && { echo "Phase 1 failed"; return $exit_code; }
 
-    # Phases 2 and 3 only run on shard 0, after all shards have finished
     if [ "${NUM_SHARDS}" -gt 1 ] && [ "${SHARD_IDX}" -ne 0 ]; then
-        echo "Shard ${SHARD_IDX} done for ${AU_BASELINE}. Run detection and metrics once all shards complete."
-        continue
+        echo "Shard ${SHARD_IDX} done. Run detection and metrics once all shards complete."
+        return 0
     fi
 
-    # If sharded, merge metadata parquets first
     if [ "${NUM_SHARDS}" -gt 1 ]; then
         echo "Merging shard metadata at $(date)"
-        OUTPUT_DIR_MERGE="${OUTPUT_DIR}" NUM_SHARDS_MERGE="${NUM_SHARDS}" \
+        OUTPUT_DIR_MERGE="${output_dir}" NUM_SHARDS_MERGE="${NUM_SHARDS}" \
             .venv/bin/python - <<'EOF'
 import os, pandas as pd
 from pathlib import Path
@@ -84,28 +81,43 @@ EOF
     # Phase 2: detect AUs
     echo "Phase 2: detecting AUs at $(date)"
     "${DETECT_VENV}/bin/python" src/scripts/detect_generated_aus.py \
-        --images-dir "${OUTPUT_DIR}/generated" \
+        --images-dir "${output_dir}/generated" \
         --detector "${DETECTOR}" \
-        --output "${OUTPUT_DIR}/au_detections.parquet"
-    SCRIPT_EXIT=$?
-    if [ $SCRIPT_EXIT -ne 0 ]; then
-        echo "Phase 2 (${AU_BASELINE}) failed, exiting"
-        exit $SCRIPT_EXIT
-    fi
+        --output "${output_dir}/au_detections.parquet"
+    exit_code=$?
+    [ $exit_code -ne 0 ] && { echo "Phase 2 failed"; return $exit_code; }
 
     # Phase 3: compute AU metrics
     echo "Phase 3: computing AU metrics at $(date)"
     .venv/bin/python src/scripts/eval_quantitative.py \
-        --output-dir "${OUTPUT_DIR}" \
-        --au-detections "${OUTPUT_DIR}/au_detections.parquet" \
+        --output-dir "${output_dir}" \
+        --au-detections "${output_dir}/au_detections.parquet" \
+        --eval-mode "${eval_mode_arg}" \
         --metrics-only
-    SCRIPT_EXIT=$?
-    if [ $SCRIPT_EXIT -ne 0 ]; then
-        echo "Phase 3 (${AU_BASELINE}) failed, exiting"
-        exit $SCRIPT_EXIT
-    fi
+    exit_code=$?
+    [ $exit_code -ne 0 ] && { echo "Phase 3 failed"; return $exit_code; }
+    return 0
+}
 
-done
+if [ "${EVAL_MODE}" = "paired" ]; then
+    if [ "${DATASET}" != "bp4d" ]; then
+        echo "EVAL_MODE=paired requires DATASET=bp4d, got DATASET=${DATASET}"
+        exit 1
+    fi
+    echo "=== Mode: paired ==="
+    _run_phase "eval/${MODEL_NAME}_${DATASET}_paired" "--min-au-distance 2.0" "paired"
+    exit $?
+else
+    for AU_BASELINE in zero source; do
+        echo "=== Mode: emotion  Baseline: ${AU_BASELINE} ==="
+        _run_phase \
+            "eval/${MODEL_NAME}_${DATASET}_${AU_BASELINE}" \
+            "--au-baseline ${AU_BASELINE}" \
+            "emotion"
+        SCRIPT_EXIT=$?
+        [ $SCRIPT_EXIT -ne 0 ] && exit $SCRIPT_EXIT
+    done
+fi
 
 echo "Done, finished at $(date)"
 exit 0

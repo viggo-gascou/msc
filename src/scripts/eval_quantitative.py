@@ -92,13 +92,33 @@ def main() -> None:
     parser.add_argument("--shard-idx", type=int, default=0)
     parser.add_argument("--num-shards", type=int, default=1)
     parser.add_argument(
+        "--eval-mode",
+        type=str,
+        default="emotion",
+        choices=["emotion", "paired"],
+        help=(
+            "'emotion': generate one image per source per AU_CONFIGS emotion. "
+            "'paired': generate one image per source conditioned on a random "
+            "same-subject target frame (BP4D only). Default: emotion."
+        ),
+    )
+    parser.add_argument(
         "--au-baseline",
         type=str,
         default="source",
         choices=["zero", "source"],
         help=(
-            "How to set unspecified AUs: 'source' uses the source image AUs as base "
-            "(default), 'zero' sets all unspecified AUs to 0."
+            "emotion mode only. How to set unspecified AUs: 'source' uses the source "
+            "image AUs as base (default), 'zero' sets all unspecified AUs to 0."
+        ),
+    )
+    parser.add_argument(
+        "--min-au-distance",
+        type=float,
+        default=2.0,
+        help=(
+            "paired mode only. Minimum L1 AU distance between source and target frame. "
+            "Default: 2.0."
         ),
     )
     parser.add_argument(
@@ -125,10 +145,16 @@ def main() -> None:
         if args.au_detections is None:
             raise ValueError("--au-detections is required with --metrics-only")
         detections = pd.read_parquet(args.au_detections)
-        _print_au_metrics(metadata=metadata, detections=detections)
+        _print_non_au_summary(metadata=metadata)
+        _print_au_metrics(
+            metadata=metadata, detections=detections, eval_mode=args.eval_mode
+        )
         return
 
     au_adapter_path, config_path = _resolve_model_paths(args)
+
+    if args.eval_mode == "paired" and args.dataset != "bp4d":
+        raise ValueError("--eval-mode paired requires --dataset bp4d")
 
     device = torch.device(args.device)
     dtype = torch.bfloat16 if args.device == "cuda" else torch.float32
@@ -155,7 +181,9 @@ def main() -> None:
         num_shards=args.num_shards,
         device=device,
         dtype=dtype,
+        eval_mode=args.eval_mode,
         au_baseline=args.au_baseline,
+        min_au_distance=args.min_au_distance,
     )
     shard_suffix = f"_shard{args.shard_idx}" if args.num_shards > 1 else ""
     metadata_path = output_dir / f"metadata{shard_suffix}.parquet"
@@ -210,11 +238,15 @@ def _run_eval(
     num_shards: int,
     device: torch.device,
     dtype: torch.dtype,
+    eval_mode: str = "emotion",
     au_baseline: str = "source",
+    min_au_distance: float = 2.0,
 ) -> pd.DataFrame:
     """Generate images and compute ArcFace + latent metrics for all samples.
 
-    Each source image is generated once per AU config in AU_CONFIGS.
+    In 'emotion' mode, each source image is generated once per AU config.
+    In 'paired' mode, each source image is generated once conditioned on a
+    randomly sampled same-subject target frame (BP4D only).
 
     Args:
         pipeline:
@@ -243,12 +275,18 @@ def _run_eval(
             Target device.
         dtype:
             Model dtype.
+        eval_mode (optional):
+            'emotion' uses fixed AU_CONFIGS targets; 'paired' uses random
+            same-subject target frames. Defaults to 'emotion'.
         au_baseline (optional):
-            How to set unspecified AUs: 'source' uses source image AUs as base,
-            'zero' sets all unspecified AUs to 0. Defaults to 'source'.
+            emotion mode only. 'source' uses source AUs as base, 'zero' uses
+            all zeros. Defaults to 'source'.
+        min_au_distance (optional):
+            paired mode only. Minimum L1 AU distance between source and target.
+            Defaults to 2.0.
 
     Returns:
-        DataFrame with one row per (source image, AU config) pair.
+        DataFrame with one row per generated image.
     """
     _, val_tf = get_transforms()
     is_bp4d = dataset == "bp4d"
@@ -258,6 +296,8 @@ def _run_eval(
         ds: BP4DDataset | FFHQDataset = BP4DDataset(
             index_path=BP4D_TEST_INDEX_PATH, transform=val_tf, detector=detector
         )
+        if eval_mode == "paired":
+            ds.set_min_au_distance(min_au_distance)
     else:
         ds = FFHQDataset(split="test", transform=val_tf, detector=detector)
 
@@ -275,22 +315,15 @@ def _run_eval(
     rows: list[dict[str, t.Any]] = []
     for i, idx in tqdm(source_indices, desc="Evaluating", unit="source"):
         sample = ds[idx]
-        for config_name, overrides in AU_CONFIGS.items():
-            if au_baseline == "zero":
-                aus_tensor = torch.zeros(
-                    pipeline.au_encoder.num_aus, dtype=torch.float32
-                )
-            else:
-                aus_tensor = sample["aus"].nan_to_num(0.0).clone()
-            for au_name, intensity in overrides.items():
-                if au_name in au_name_to_idx:
-                    aus_tensor[au_name_to_idx[au_name]] = intensity
+
+        if eval_mode == "paired":
+            aus_tensor = sample["target_aus"].nan_to_num(0.0)
             row = _evaluate_sample(
                 pipeline=pipeline,
                 sample=sample,
                 sample_id=i,
                 dataset_idx=idx,
-                config_name=config_name,
+                config_name="paired",
                 requested_aus=aus_tensor,
                 is_bp4d=is_bp4d,
                 ds=ds,
@@ -301,8 +334,39 @@ def _run_eval(
                 gen_dir=gen_dir,
                 device=device,
                 dtype=dtype,
+                paired_latents=True,
             )
             rows.append(row)
+        else:
+            for config_name, overrides in AU_CONFIGS.items():
+                if au_baseline == "zero":
+                    aus_tensor = torch.zeros(
+                        pipeline.au_encoder.num_aus, dtype=torch.float32
+                    )
+                else:
+                    aus_tensor = sample["aus"].nan_to_num(0.0).clone()
+                for au_name, intensity in overrides.items():
+                    if au_name in au_name_to_idx:
+                        aus_tensor[au_name_to_idx[au_name]] = intensity
+                row = _evaluate_sample(
+                    pipeline=pipeline,
+                    sample=sample,
+                    sample_id=i,
+                    dataset_idx=idx,
+                    config_name=config_name,
+                    requested_aus=aus_tensor,
+                    is_bp4d=is_bp4d,
+                    ds=ds,
+                    strength=strength,
+                    au_scale=au_scale,
+                    guidance_scale=guidance_scale,
+                    num_steps=num_steps,
+                    gen_dir=gen_dir,
+                    device=device,
+                    dtype=dtype,
+                    paired_latents=False,
+                )
+                rows.append(row)
 
     return pd.DataFrame(rows)
 
@@ -323,6 +387,7 @@ def _evaluate_sample(
     gen_dir: Path,
     device: torch.device,
     dtype: torch.dtype,
+    paired_latents: bool = False,
 ) -> dict[str, t.Any]:
     source_pil = _tensor_to_pil(tensor=sample["image"])
     arcface = sample["arcface"].unsqueeze(0).to(device=device, dtype=dtype)
@@ -358,6 +423,15 @@ def _evaluate_sample(
     z_pred = _encode_latent(vae=pipeline.vae, img=gen_tensor, device=device)
     latent_d_src_pred = _rmse(z_src, z_pred)
 
+    latent_d_src_tgt: float | None = None
+    latent_d_pred_tgt: float | None = None
+    if paired_latents:
+        z_tgt = _encode_latent(
+            vae=pipeline.vae, img=sample["target_image"], device=device
+        )
+        latent_d_src_tgt = _rmse(z_src, z_tgt)
+        latent_d_pred_tgt = _rmse(z_pred, z_tgt)
+
     row: dict[str, t.Any] = {
         "sample_id": sample_id,
         "dataset_idx": dataset_idx,
@@ -367,6 +441,8 @@ def _evaluate_sample(
         "source_aus": sample["aus"].nan_to_num(0.0).tolist(),
         "arcface_cosim": arcface_cosim,
         "latent_d_src_pred": latent_d_src_pred,
+        "latent_d_src_tgt": latent_d_src_tgt,
+        "latent_d_pred_tgt": latent_d_pred_tgt,
     }
     if is_bp4d:
         row["subject"] = sample["subject"]
@@ -379,20 +455,46 @@ def _evaluate_sample(
     return row
 
 
-def _print_au_metrics(metadata: pd.DataFrame, detections: pd.DataFrame) -> None:
-    """Compute and print per-config AU MSE and Wasserstein metrics.
+def _print_au_metrics(
+    metadata: pd.DataFrame,
+    detections: pd.DataFrame,
+    eval_mode: str = "emotion",
+) -> None:
+    """Compute and print AU MSE and Wasserstein metrics.
 
     Args:
         metadata:
             Per-sample metadata from the generation phase.
         detections:
             Per-sample AU detections from detect_generated_aus.py.
+        eval_mode (optional):
+            'emotion' prints per-config metrics vs fixed AU_CONFIGS targets.
+            'paired' prints overall AU accuracy vs the requested target AUs.
+            Defaults to 'emotion'.
     """
     merged = metadata.merge(detections, on=["sample_id", "config_name"], how="inner")
     logger.info(f"Computing AU metrics over {len(merged)} samples with detections.")
 
     au_cols = [c for c in detections.columns if c.startswith("detected_")]
     au_names = [c.removeprefix("detected_") for c in au_cols]
+
+    if eval_mode == "paired":
+        detected = merged[au_cols].values
+        source = np.stack(merged["source_aus"].tolist())
+        requested = np.stack(merged["requested_aus"].tolist())
+        n = min(detected.shape[1], requested.shape[1])
+        au_mae = float(np.nanmean(np.abs(detected[:, :n] - requested[:, :n])))
+        au_mse = float(np.nanmean((detected[:, :n] - requested[:, :n]) ** 2))
+        src_det_mae = float(
+            np.nanmean(np.abs(detected[:, :n] - source[:, :n]))
+        )
+        logger.info(f"  [paired]  n={len(merged)}")
+        logger.info(f"    MAE  detected vs requested AUs: {au_mae:.4f}")
+        logger.info(f"    MSE  detected vs requested AUs: {au_mse:.4f}")
+        logger.info(f"    MAE  src->det (all AUs):        {src_det_mae:.4f}")
+        return
+
+    per_config: list[dict[str, float]] = []
 
     for config_name, group in merged.groupby("config_name"):
         detected = group[au_cols].values
@@ -428,6 +530,16 @@ def _print_au_metrics(metadata: pd.DataFrame, detections: pd.DataFrame) -> None:
         src_det_mae = float(np.nanmean(np.abs(detected[:, :n_det] - source[:, :n_det])))
         src_det_mse = float(np.nanmean((detected[:, :n_det] - source[:, :n_det]) ** 2))
 
+        per_config.append({
+            "au_mse": au_mse,
+            "au_mae": au_mae,
+            "w_det_req": w_det_req,
+            "inactive_mse": inactive_mse,
+            "inactive_mae": inactive_mae,
+            "src_det_mae": src_det_mae,
+            "src_det_mse": src_det_mse,
+        })
+
         tgt_mean = target_vals.mean()
         logger.info(f"  [{config_name}]  n={len(group)}")
         logger.info(f"    MSE  active AUs (target={tgt_mean:.2f}): {au_mse:.4f}")
@@ -437,6 +549,17 @@ def _print_au_metrics(metadata: pd.DataFrame, detections: pd.DataFrame) -> None:
         logger.info(f"    MAE  inactive AUs:                       {inactive_mae:.4f}")
         logger.info(f"    MAE  src->det (all AUs):                 {src_det_mae:.4f}")
         logger.info(f"    MSE  src->det (all AUs):                 {src_det_mse:.4f}")
+
+    if per_config:
+        avg = {k: float(np.mean([d[k] for d in per_config])) for k in per_config[0]}
+        logger.info("  [average across all configs]")
+        logger.info(f"    MSE  active AUs:               {avg['au_mse']:.4f}")
+        logger.info(f"    MAE  active AUs:               {avg['au_mae']:.4f}")
+        logger.info(f"    Wasserstein det->req (active): {avg['w_det_req']:.4f}")
+        logger.info(f"    MSE  inactive AUs (target=0):  {avg['inactive_mse']:.4f}")
+        logger.info(f"    MAE  inactive AUs:             {avg['inactive_mae']:.4f}")
+        logger.info(f"    MAE  src->det (all AUs):       {avg['src_det_mae']:.4f}")
+        logger.info(f"    MSE  src->det (all AUs):       {avg['src_det_mse']:.4f}")
 
 
 def _print_non_au_summary(metadata: pd.DataFrame) -> None:
@@ -459,6 +582,25 @@ def _print_non_au_summary(metadata: pd.DataFrame) -> None:
             f"Latent d(src, pred):  mean={d_src_pred.mean():.4f}  "
             f"median={d_src_pred.median():.4f}"
         )
+
+    if "latent_d_src_tgt" in metadata.columns:
+        d_src_tgt = metadata["latent_d_src_tgt"].dropna()
+        d_pred_tgt = metadata["latent_d_pred_tgt"].dropna()
+        if len(d_src_tgt) > 0:
+            ratio = (d_pred_tgt / d_src_tgt).dropna()
+            logger.info(
+                f"Latent d(src, tgt):   mean={d_src_tgt.mean():.4f}  "
+                f"median={d_src_tgt.median():.4f}"
+            )
+            logger.info(
+                f"Latent d(pred, tgt):  mean={d_pred_tgt.mean():.4f}  "
+                f"median={d_pred_tgt.median():.4f}"
+            )
+            logger.info(
+                f"Ratio d(pred,tgt)/d(src,tgt):  "
+                f"mean={ratio.mean():.4f}  median={ratio.median():.4f}  "
+                f"(< 1 means pred is closer to target than source)"
+            )
 
 
 def _encode_latent(
