@@ -132,7 +132,25 @@ def main() -> None:
         action="store_true",
         help="Skip generation; load existing metadata and compute AU metrics only.",
     )
+    parser.add_argument(
+        "--au-configs-json",
+        type=str,
+        default=None,
+        help=(
+            "JSON override for the AU_CONFIGS dict used in emotion mode, e.g. "
+            "'{\"au05_au12\": {\"AU05\": 1.0, \"AU12\": 1.0}}'. "
+            "Defaults to the built-in four-emotion configs."
+        ),
+    )
     args = parser.parse_args()
+
+    if args.au_configs_json is not None:
+        try:
+            au_configs: dict[str, dict[str, float]] = json.loads(args.au_configs_json)
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"Invalid --au-configs-json: {args.au_configs_json}") from exc
+    else:
+        au_configs = AU_CONFIGS
 
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -148,7 +166,8 @@ def main() -> None:
         detections = pd.read_parquet(args.au_detections)
         _print_non_au_summary(metadata=metadata)
         _print_au_metrics(
-            metadata=metadata, detections=detections, eval_mode=args.eval_mode
+            metadata=metadata, detections=detections, eval_mode=args.eval_mode,
+            au_configs=au_configs,
         )
         return
 
@@ -182,6 +201,7 @@ def main() -> None:
         eval_mode=args.eval_mode,
         au_baseline=args.au_baseline,
         min_au_distance=args.min_au_distance,
+        au_configs=au_configs,
     )
     shard_suffix = f"_shard{args.shard_idx}" if args.num_shards > 1 else ""
     metadata_path = output_dir / f"metadata{shard_suffix}.parquet"
@@ -192,7 +212,7 @@ def main() -> None:
 
     if args.au_detections is not None:
         detections = pd.read_parquet(args.au_detections)
-        _print_au_metrics(metadata=metadata, detections=detections)
+        _print_au_metrics(metadata=metadata, detections=detections, au_configs=au_configs)
 
 
 def _resolve_model_paths(args: argparse.Namespace) -> tuple[str, str]:
@@ -239,6 +259,7 @@ def _run_eval(
     eval_mode: str = "emotion",
     au_baseline: str = "source",
     min_au_distance: float = 2.0,
+    au_configs: dict[str, dict[str, float]] | None = None,
 ) -> pd.DataFrame:
     """Generate images and compute ArcFace + latent metrics for all samples.
 
@@ -336,7 +357,7 @@ def _run_eval(
             )
             rows.append(row)
         else:
-            for config_name, overrides in AU_CONFIGS.items():
+            for config_name, overrides in (au_configs or AU_CONFIGS).items():
                 if au_baseline == "zero":
                     aus_tensor = torch.zeros(
                         pipeline.au_encoder.num_aus, dtype=torch.float32
@@ -454,7 +475,10 @@ def _evaluate_sample(
 
 
 def _print_au_metrics(
-    metadata: pd.DataFrame, detections: pd.DataFrame, eval_mode: str = "emotion"
+    metadata: pd.DataFrame,
+    detections: pd.DataFrame,
+    eval_mode: str = "emotion",
+    au_configs: dict[str, dict[str, float]] | None = None,
 ) -> None:
     """Compute and print AU MSE and Wasserstein metrics.
 
@@ -493,7 +517,7 @@ def _print_au_metrics(
     for config_name, group in merged.groupby("config_name"):
         detected = group[au_cols].values
         source = np.stack(group["source_aus"].tolist())
-        config_aus = AU_CONFIGS[str(config_name)]
+        config_aus = (au_configs or AU_CONFIGS)[str(config_name)]
 
         # Build (N, num_active) arrays using only the AUs present in this config
         # and in the detection output, comparing against the known fixed targets.
