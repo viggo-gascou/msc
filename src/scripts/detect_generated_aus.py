@@ -246,7 +246,7 @@ def _parse_sample_meta(path: Path) -> tuple[int, str]:
         ValueError:
             If the filename does not match the expected pattern.
     """
-    match = re.fullmatch(r"sample_(\d+)_([a-z_]+)", path.stem)
+    match = re.fullmatch(r"sample_(\d+)_([a-zA-Z0-9_]+)", path.stem)
     if match is None:
         raise ValueError(f"Cannot parse sample metadata from {path.name}")
     return int(match.group(1)), match.group(2)
