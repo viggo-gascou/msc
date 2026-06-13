@@ -146,7 +146,17 @@ def _process_run(eval_dir: Path) -> None:
 def _build_dataset(
     is_bp4d: bool, eval_mode: str, min_au_distance: float, detector: str = "pyfeat"
 ) -> BP4DDataset | FFHQDataset:
-    """Build dataset index only — no image loading."""
+    """Build dataset index.
+
+    Args:
+        is_bp4d: Whether the dataset is BP4D or FFHQ.
+        eval_mode: The evaluation mode, either "paired" or "unpaired".
+        min_au_distance: The minimum AU L1 distance for target frame sampling.
+        detector: The face detector to use, either "pyfeat" or "libreface".
+
+    Returns:
+        The built dataset, either a `BP4DDataset` or `FFHQDataset`.
+    """
     if is_bp4d:
         ds: BP4DDataset | FFHQDataset = BP4DDataset(
             index_path=BP4D_TEST_INDEX_PATH, detector=detector
