@@ -1,12 +1,11 @@
 """FFHQ dataset utilities — index loading and HDF5 stem filtering."""
 
+import typing as t
 from pathlib import Path
 
 import h5py
 import pandas as pd
 from loguru import logger
-
-import typing as t
 
 from ...constants import (
     FFHQ_EMBEDDINGS_PATH,
@@ -16,9 +15,7 @@ from ...constants import (
 )
 
 
-def load_ffhq_df(
-    detector: t.Literal["pyfeat", "libreface"] = "pyfeat",
-) -> pd.DataFrame:
+def load_ffhq_df(detector: t.Literal["pyfeat", "libreface"] = "pyfeat") -> pd.DataFrame:
     """Load the merged FFHQ dataset index with AU data and split assignments.
 
     Args:
@@ -36,7 +33,10 @@ def load_ffhq_df(
     """
     au_path = LIBREFACE_FFHQ_PATH if detector == "libreface" else PYFEAT_FFHQ_PATH
     for path, hint in [
-        (au_path, f"run {'libreface' if detector == 'libreface' else 'pyfeat'}_ffhq.py first"),
+        (
+            au_path,
+            f"run {'libreface' if detector == 'libreface' else 'pyfeat'}_ffhq.py first",
+        ),
         (FFHQ_INDEX_PATH, "run build_ffhq_index.py first"),
         (FFHQ_EMBEDDINGS_PATH, "run precompute_embeddings.py --dataset ffhq first"),
     ]:
