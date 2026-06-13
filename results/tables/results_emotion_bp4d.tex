@@ -1,0 +1,18 @@
+\begin{table}[htb]
+\caption{Emotion-mode quantitative results on BP4D averaged across smile, surprise, anger, and sadness. AU MAE (active) measures how closely the generated expressions match the target \acp{AU}. AU MAE (inactive) measures leakage into non-target \acp{AU}.}
+\label{tab:results-emotion-bp4d}
+\begin{tabular}{lllccc}
+\toprule
+ &  &  & ArcFace $\uparrow$ & AU MAE (active) $\downarrow$ & AU MAE (inactive) $\downarrow$ \\
+Detector & Stage & Baseline &  &  &  \\
+\midrule
+\multirow[t]{2}{*}{Libreface} & \multirow[t]{2}{*}{Pretrain} & Source & 0.338 & 0.601 & \textbf{0.206} \\
+\cmidrule{3-6}
+ &  & Zero & 0.327 & 0.593 & \textbf{0.193} \\
+\cmidrule{1-6}
+\multirow[t]{2}{*}{Pyfeat} & \multirow[t]{2}{*}{Pretrain} & Source & \textbf{0.378} & \textbf{0.325} & 0.453 \\
+\cmidrule{3-6}
+ &  & Zero & \textbf{0.339} & \textbf{0.315} & 0.432 \\
+\bottomrule
+\end{tabular}
+\end{table}

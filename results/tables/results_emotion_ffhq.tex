@@ -1,0 +1,18 @@
+\begin{table}[htb]
+\caption{Emotion-mode quantitative results on FFHQ averaged across smile, surprise, anger, and sadness. AU MAE (active) measures how closely the generated expressions match the target \acp{AU}. AU MAE (inactive) measures leakage into non-target \acp{AU}.}
+\label{tab:results-emotion-ffhq}
+\begin{tabular}{lllccc}
+\toprule
+ &  &  & ArcFace $\uparrow$ & AU MAE (active) $\downarrow$ & AU MAE (inactive) $\downarrow$ \\
+Detector & Stage & Baseline &  &  &  \\
+\midrule
+\multirow[t]{2}{*}{Libreface} & \multirow[t]{2}{*}{Pretrain} & Source & 0.102 & 0.603 & \textbf{0.177} \\
+\cmidrule{3-6}
+ &  & Zero & 0.103 & 0.601 & \textbf{0.165} \\
+\cmidrule{1-6}
+\multirow[t]{2}{*}{Pyfeat} & \multirow[t]{2}{*}{Pretrain} & Source & \textbf{0.118} & \textbf{0.339} & 0.446 \\
+\cmidrule{3-6}
+ &  & Zero & \textbf{0.115} & \textbf{0.331} & 0.399 \\
+\bottomrule
+\end{tabular}
+\end{table}

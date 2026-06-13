@@ -1,0 +1,14 @@
+\begin{tabular}{lllccc}
+\toprule
+ &  &  & ArcFace $\uparrow$ & AU MAE (active) $\downarrow$ & AU MAE (inactive) $\downarrow$ \\
+Detector & Stage & Baseline &  &  &  \\
+\midrule
+\multirow[t]{2}{*}{Libreface} & \multirow[t]{2}{*}{Pretrain} & Source & 0.220 & 0.602 & \textbf{0.191} \\
+\cmidrule{3-6}
+ &  & Zero & 0.215 & 0.597 & \textbf{0.179} \\
+\cmidrule{1-6}
+\multirow[t]{2}{*}{Pyfeat} & \multirow[t]{2}{*}{Pretrain} & Source & \textbf{0.248} & \textbf{0.332} & 0.450 \\
+\cmidrule{3-6}
+ &  & Zero & \textbf{0.227} & \textbf{0.323} & 0.415 \\
+\bottomrule
+\end{tabular}

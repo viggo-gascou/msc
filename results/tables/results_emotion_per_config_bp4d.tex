@@ -1,0 +1,42 @@
+\begin{table}[htb]
+\caption{Per-emotion quantitative results on BP4D. AU MAE (active) measures how closely the generated expressions match the target \acp{AU}. AU MAE (inactive) measures leakage into non-target \acp{AU}.}
+\label{tab:results-emotion-per-config-bp4d}
+\begin{tabular}{llllccc}
+\toprule
+ &  &  &  & ArcFace $\uparrow$ & AU MAE (active) $\downarrow$ & AU MAE (inactive) $\downarrow$ \\
+Detector & Stage & Baseline & Emotion &  &  &  \\
+\midrule
+\multirow[t]{8}{*}{Libreface} & \multirow[t]{8}{*}{Pretrain} & \multirow[t]{4}{*}{Source} & Smile & 0.340 & 0.603 & \textbf{0.263} \\
+\cmidrule{4-7}
+ &  &  & Surprise & 0.314 & 0.693 & \textbf{0.188} \\
+\cmidrule{4-7}
+ &  &  & Anger & \textbf{0.388} & 0.623 & \textbf{0.151} \\
+\cmidrule{4-7}
+ &  &  & Sadness & 0.310 & 0.485 & \textbf{0.220} \\
+\cmidrule{3-7}
+ &  & \multirow[t]{4}{*}{Zero} & Smile & 0.348 & 0.597 & \textbf{0.254} \\
+\cmidrule{4-7}
+ &  &  & Surprise & 0.280 & 0.683 & \textbf{0.164} \\
+\cmidrule{4-7}
+ &  &  & Anger & \textbf{0.385} & 0.614 & \textbf{0.138} \\
+\cmidrule{4-7}
+ &  &  & Sadness & 0.294 & 0.479 & \textbf{0.217} \\
+\cmidrule{1-7}
+\multirow[t]{8}{*}{Pyfeat} & \multirow[t]{8}{*}{Pretrain} & \multirow[t]{4}{*}{Source} & Smile & \textbf{0.401} & \textbf{0.158} & 0.432 \\
+\cmidrule{4-7}
+ &  &  & Surprise & \textbf{0.348} & \textbf{0.505} & 0.492 \\
+\cmidrule{4-7}
+ &  &  & Anger & 0.364 & \textbf{0.426} & 0.443 \\
+\cmidrule{4-7}
+ &  &  & Sadness & \textbf{0.400} & \textbf{0.209} & 0.446 \\
+\cmidrule{3-7}
+ &  & \multirow[t]{4}{*}{Zero} & Smile & \textbf{0.364} & \textbf{0.124} & 0.427 \\
+\cmidrule{4-7}
+ &  &  & Surprise & \textbf{0.324} & \textbf{0.510} & 0.474 \\
+\cmidrule{4-7}
+ &  &  & Anger & 0.325 & \textbf{0.422} & 0.413 \\
+\cmidrule{4-7}
+ &  &  & Sadness & \textbf{0.342} & \textbf{0.202} & 0.412 \\
+\bottomrule
+\end{tabular}
+\end{table}
