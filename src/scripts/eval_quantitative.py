@@ -58,7 +58,7 @@ AU_CONFIGS: dict[str, dict[str, float]] = {
     "smile": {"AU06": 0.8, "AU12": 0.8},
     "surprise": {"AU01": 0.8, "AU02": 0.8, "AU05": 0.8, "AU26": 0.8},
     "anger": {"AU04": 0.8, "AU05": 0.8, "AU07": 0.8, "AU23": 0.8},
-    "sadness": {"AU01": 0.6, "AU04": 0.7, "AU15": 0.6, "AU17": 0.5},
+    "sadness": {"AU01": 0.8, "AU04": 0.8, "AU15": 0.8, "AU17": 0.8},
 }
 
 
@@ -136,9 +136,10 @@ def main() -> None:
 
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
-    (output_dir / "args.json").write_text(
-        json.dumps(vars(args), indent=2), encoding="utf-8"
-    )
+    if not args.metrics_only:
+        (output_dir / "args.json").write_text(
+            json.dumps(vars(args), indent=2), encoding="utf-8"
+        )
 
     if args.metrics_only:
         metadata = pd.read_parquet(output_dir / "metadata.parquet")

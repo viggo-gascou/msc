@@ -127,6 +127,10 @@ def _detect_pyfeat(image_paths: list[Path]) -> list[dict[str, t.Any]]:
 
     Returns:
         List of dicts with sample_id and detected AU columns.
+
+    Raises:
+        ValueError:
+            If no face is detected in an image.
     """
     import warnings
 
@@ -195,8 +199,8 @@ def _detect_libreface(image_paths: list[Path]) -> list[dict[str, t.Any]]:
     Returns:
         List of dicts with sample_id and detected AU columns (normalised to [0,1]).
     """
-    import torch  # type: ignore[import]
     import libreface  # type: ignore[import]
+    import torch  # type: ignore[import]
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
     str_paths = [str(p) for p in image_paths]
@@ -215,7 +219,9 @@ def _detect_libreface(image_paths: list[Path]) -> list[dict[str, t.Any]]:
         try:
             result_row = combined.iloc[i]
             for au, raw_col in _LIBREFACE_AU_COLUMN_MAP.items():
-                val = result_row[raw_col] if raw_col in result_row.index else float("nan")
+                val = (
+                    result_row[raw_col] if raw_col in result_row.index else float("nan")
+                )
                 row[f"detected_{au}"] = float(val) * _LIBREFACE_AU_SCALE[au]
         except Exception as e:
             logger.warning(f"{path.name}: {e}")
